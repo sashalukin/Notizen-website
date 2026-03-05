@@ -1,0 +1,61 @@
+.container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background-color: var(--bg-primary);
+}
+
+.loading {
+  color: var(--text-meta);
+  font-size: 16px;
+}
+
+.hero {
+  text-align: center;
+  max-width: 480px;
+  padding: 48px;
+}
+
+.logo {
+  font-size: 56px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0 0 16px;
+  letter-spacing: -1px;
+}
+
+.tagline {
+  font-size: 18px;
+  color: var(--text-meta);
+  line-height: 1.6;
+  margin: 0 0 40px;
+}
+
+.ctaButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 28px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: white;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+
+.ctaButton:hover {
+  background-color: var(--bg-sidebar);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.ctaButton:active {
+  transform: scale(0.98);
+}
+
+.googleIcon {
+  flex-shrink: 0;
+}
