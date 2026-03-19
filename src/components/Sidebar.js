@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import UserMenu from './UserMenu';
 import styles from './Sidebar.module.css';
@@ -12,6 +12,8 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   const activeNoteId = pathname.startsWith('/notes/') ? pathname.split('/')[2] : null;
+  const notesRef = useRef([]);
+  const firedRef = useRef(new Set());
 
   async function fetchNotes() {
     try {
@@ -32,12 +34,64 @@ export default function Sidebar() {
   }, [pathname]);
 
   useEffect(() => {
+    const channel = new BroadcastChannel('notizen-sync');
+
     function handleNoteUpdated() {
       fetchNotes();
+      channel.postMessage('sync');
     }
+
+    function handleBroadcast() {
+      fetchNotes();
+    }
+
     window.addEventListener('note-updated', handleNoteUpdated);
-    return () => window.removeEventListener('note-updated', handleNoteUpdated);
+    channel.addEventListener('message', handleBroadcast);
+    return () => {
+      window.removeEventListener('note-updated', handleNoteUpdated);
+      channel.removeEventListener('message', handleBroadcast);
+      channel.close();
+    };
   }, []);
+
+  // Keep notesRef in sync
+  useEffect(() => {
+    notesRef.current = notes;
+  }, [notes]);
+
+  // Poll for due reminders every 10 seconds
+  useEffect(() => {
+    function checkReminders() {
+      notesRef.current.forEach(note => {
+        if (!note.remind_at || firedRef.current.has(note.id)) return;
+        if (new Date(note.remind_at) <= new Date()) {
+          firedRef.current.add(note.id);
+          fireReminder(note);
+        }
+      });
+    }
+
+    checkReminders();
+    const interval = setInterval(checkReminders, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  async function fireReminder(note) {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      new Notification('Notizen', {
+        body: note.title || 'Untitled',
+        icon: '/android-chrome-192x192.png',
+      });
+    }
+    await fetch(`/api/notes/${note.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remind_at: null }),
+    });
+    firedRef.current.delete(note.id);
+    window.dispatchEvent(new CustomEvent('reminder-cleared', { detail: { noteId: note.id } }));
+    fetchNotes();
+  }
 
   async function handleNewNote() {
     try {

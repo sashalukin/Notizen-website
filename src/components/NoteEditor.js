@@ -6,15 +6,34 @@ import styles from './NoteEditor.module.css';
 export default function NoteEditor({ note }) {
   const [title, setTitle] = useState(note.title || '');
   const [saveStatus, setSaveStatus] = useState('saved');
+  const [remindAt, setRemindAt] = useState(note.remind_at || null);
   const editorRef = useRef(null);
   const saveTimerRef = useRef(null);
   const fileInputRef = useRef(null);
+  const reminderInputRef = useRef(null);
 
   // Initialize editor content
   useEffect(() => {
     if (editorRef.current && note.content) {
       editorRef.current.innerHTML = note.content;
     }
+  }, [note.id]);
+
+  // Update browser tab title
+  useEffect(() => {
+    document.title = title || 'Untitled';
+    return () => { document.title = 'Notizen'; };
+  }, [title]);
+
+  // Listen for reminder-cleared events from Sidebar
+  useEffect(() => {
+    function handleReminderCleared(e) {
+      if (e.detail?.noteId === note.id) {
+        setRemindAt(null);
+      }
+    }
+    window.addEventListener('reminder-cleared', handleReminderCleared);
+    return () => window.removeEventListener('reminder-cleared', handleReminderCleared);
   }, [note.id]);
 
   const save = useCallback(async (data) => {
@@ -118,11 +137,60 @@ export default function NoteEditor({ note }) {
     }).from(element).save();
   }
 
+  function handleBellClick() {
+    if (remindAt) {
+      if (confirm('Cancel reminder?')) {
+        handleClearReminder();
+      }
+    } else {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+      reminderInputRef.current?.showPicker();
+    }
+  }
+
+  async function handleSetReminder(dateStr) {
+    const res = await fetch(`/api/notes/${note.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remind_at: dateStr }),
+    });
+    if (res.ok) {
+      setRemindAt(dateStr);
+      window.dispatchEvent(new CustomEvent('note-updated'));
+    }
+  }
+
+  async function handleClearReminder() {
+    const res = await fetch(`/api/notes/${note.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remind_at: null }),
+    });
+    if (res.ok) {
+      setRemindAt(null);
+      window.dispatchEvent(new CustomEvent('note-updated'));
+    }
+  }
+
+  function handleReminderChange(e) {
+    if (e.target.value) {
+      handleSetReminder(new Date(e.target.value).toISOString());
+    }
+    e.target.value = '';
+  }
+
   function handleKeyDown(e) {
     if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
       e.preventDefault();
       handleBold();
     }
+  }
+
+  function formatReminderTime(dateStr) {
+    const d = new Date(dateStr);
+    return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
 
   const statusText = {
@@ -165,6 +233,22 @@ export default function NoteEditor({ note }) {
               <line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
           </button>
+          <button
+            className={`${styles.toolbarButton} ${remindAt ? styles.reminderActive : ''}`}
+            onClick={handleBellClick}
+            title={remindAt ? `Reminder: ${formatReminderTime(remindAt)}` : 'Set reminder'}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill={remindAt ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            </svg>
+          </button>
+          <input
+            ref={reminderInputRef}
+            type="datetime-local"
+            className={styles.reminderInput}
+            onChange={handleReminderChange}
+          />
         </div>
         <span className={`${styles.saveStatus} ${styles[saveStatus]}`}>
           {statusText[saveStatus]}

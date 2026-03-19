@@ -9,7 +9,7 @@ export async function GET() {
   }
 
   const result = await pool.query(
-    'SELECT id, title, content, updated_at FROM notes WHERE user_id = $1 ORDER BY updated_at DESC',
+    'SELECT id, title, content, updated_at, remind_at FROM notes WHERE user_id = $1 ORDER BY updated_at DESC',
     [session.user.id]
   );
 

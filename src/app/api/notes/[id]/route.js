@@ -9,7 +9,7 @@ export async function GET(request, { params }) {
 
   const { id } = await params;
   const result = await pool.query(
-    'SELECT id, title, content, created_at, updated_at FROM notes WHERE id = $1 AND user_id = $2',
+    'SELECT id, title, content, created_at, updated_at, remind_at FROM notes WHERE id = $1 AND user_id = $2',
     [id, session.user.id]
   );
 
@@ -38,9 +38,16 @@ export async function PUT(request, { params }) {
     return Response.json({ error: 'Not found' }, { status: 404 });
   }
 
+  const queryParams = [id, body.title, body.content];
+  let remindAtClause = '';
+  if ('remind_at' in body) {
+    queryParams.push(body.remind_at);
+    remindAtClause = `, remind_at = $${queryParams.length}`;
+  }
+
   const result = await pool.query(
-    'UPDATE notes SET title = COALESCE($2, title), content = COALESCE($3, content), updated_at = NOW() WHERE id = $1 RETURNING id, title, content, updated_at',
-    [id, body.title, body.content]
+    `UPDATE notes SET title = COALESCE($2, title), content = COALESCE($3, content)${remindAtClause}, updated_at = NOW() WHERE id = $1 RETURNING id, title, content, remind_at, updated_at`,
+    queryParams
   );
 
   return Response.json(result.rows[0]);

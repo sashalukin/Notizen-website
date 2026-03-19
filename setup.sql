@@ -42,7 +42,14 @@ CREATE TABLE IF NOT EXISTS notes (
   content    TEXT DEFAULT '',
   user_id    TEXT REFERENCES users(id) ON DELETE CASCADE,
   created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
+  updated_at TIMESTAMP DEFAULT NOW(),
+  remind_at  TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS android_auth_codes (
+  code           TEXT PRIMARY KEY,
+  session_token  TEXT NOT NULL,
+  created_at     TIMESTAMP DEFAULT NOW()
+);

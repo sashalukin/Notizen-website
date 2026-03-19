@@ -112,3 +112,15 @@
 .contentArea p {
   margin-bottom: 8px;
 }
+
+.reminderActive {
+  color: var(--accent-blue);
+}
+
+.reminderInput {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
