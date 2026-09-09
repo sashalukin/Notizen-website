@@ -1,15 +1,16 @@
 import pool from '@/lib/db';
+import crypto from 'crypto';
 
 export async function POST(request) {
-  const { code } = await request.json();
+  const { code, code_verifier } = await request.json();
 
   if (!code) {
     return Response.json({ error: 'Code is required' }, { status: 400 });
   }
 
-  // Look up the code (must be less than 60 seconds old)
+  // Atomically fetch and delete the code (one-time use)
   const result = await pool.query(
-    "SELECT session_token FROM android_auth_codes WHERE code = $1 AND created_at > NOW() - INTERVAL '60 seconds'",
+    "DELETE FROM android_auth_codes WHERE code = $1 AND created_at > NOW() - INTERVAL '60 seconds' RETURNING session_token, code_challenge",
     [code]
   );
 
@@ -17,10 +18,16 @@ export async function POST(request) {
     return Response.json({ error: 'Invalid or expired code' }, { status: 401 });
   }
 
-  const sessionToken = result.rows[0].session_token;
+  const { session_token: sessionToken, code_challenge: codeChallenge } = result.rows[0];
 
-  // Delete the code — one-time use only
-  await pool.query('DELETE FROM android_auth_codes WHERE code = $1', [code]);
+  // Verify PKCE
+  if (!code_verifier) {
+    return Response.json({ error: 'code_verifier is required' }, { status: 400 });
+  }
+  const hash = crypto.createHash('sha256').update(code_verifier).digest('base64url');
+  if (hash !== codeChallenge) {
+    return Response.json({ error: 'Invalid code_verifier' }, { status: 401 });
+  }
 
   // Return the session token as a cookie
   const isProduction = process.env.NODE_ENV === 'production';

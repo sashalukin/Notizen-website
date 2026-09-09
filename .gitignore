@@ -27,3 +27,6 @@ npm-debug.log*
 # uploads
 /public/uploads/*
 !/public/uploads/.gitkeep
+
+# local Claude Code settings (may contain local shell permissions/secrets)
+.claude/

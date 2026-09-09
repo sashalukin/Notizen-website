@@ -52,3 +52,17 @@
 .googleIcon {
   flex-shrink: 0;
 }
+
+.spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--border-color);
+  border-top-color: #4285F4;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  margin: 12px auto;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

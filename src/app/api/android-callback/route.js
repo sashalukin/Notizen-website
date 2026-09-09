@@ -18,13 +18,19 @@ export async function GET(request) {
     return Response.redirect(new URL('/signin', request.url));
   }
 
+  // Get the PKCE code_challenge (passed through from /android-signin)
+  const codeChallenge = new URL(request.url).searchParams.get('code_challenge');
+  if (!codeChallenge) {
+    return Response.json({ error: 'code_challenge is required' }, { status: 400 });
+  }
+
   // Generate a one-time code
   const code = crypto.randomUUID();
 
-  // Store it (expires naturally — exchange endpoint checks created_at)
+  // Store it with the code_challenge
   await pool.query(
-    'INSERT INTO android_auth_codes (code, session_token) VALUES ($1, $2)',
-    [code, sessionToken]
+    'INSERT INTO android_auth_codes (code, session_token, code_challenge) VALUES ($1, $2, $3)',
+    [code, sessionToken, codeChallenge]
   );
 
   // Clean up codes older than 5 minutes
@@ -32,6 +38,6 @@ export async function GET(request) {
     "DELETE FROM android_auth_codes WHERE created_at < NOW() - INTERVAL '5 minutes'"
   );
 
-  // Redirect to the Android app via deep link
-  return Response.redirect(`notizen://auth?code=${code}`);
+  // Redirect to the Android app via explicit intent (package-targeted)
+  return Response.redirect(`intent://auth?code=${code}#Intent;scheme=notizen;package=com.google.android.samples.notizen;end`);
 }

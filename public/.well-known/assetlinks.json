@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.google.android.samples.notizen",
+    "sha256_cert_fingerprints": ["AB:08:A2:29:ED:FD:52:21:A0:AA:74:5C:2F:66:FF:0A:90:CF:E5:4F:78:A5:72:97:18:6D:4B:CF:0F:61:65:2E"]
+  }
+}]
