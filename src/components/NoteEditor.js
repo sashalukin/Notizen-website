@@ -2,22 +2,30 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import styles from './NoteEditor.module.css';
+import DOMPurify from 'dompurify';
 
-export default function NoteEditor({ note }) {
+export default function NoteEditor({ note, onSave }) {
   const [title, setTitle] = useState(note.title || '');
   const [saveStatus, setSaveStatus] = useState('saved');
   const [remindAt, setRemindAt] = useState(note.remind_at || null);
   const editorRef = useRef(null);
-  const saveTimerRef = useRef(null);
+  const savingRef = useRef(0);
+  const failedRef = useRef(false);
+  const saveChain = useRef(Promise.resolve());
+  const seenSeq = useRef(note.localSeq || 0);
+  const draftRef = useRef(null);
   const fileInputRef = useRef(null);
   const reminderInputRef = useRef(null);
 
-  // Initialize editor content
+  // Refresh remote changes without resetting the caret for our own local saves.
   useEffect(() => {
-    if (editorRef.current && note.content) {
-      editorRef.current.innerHTML = note.content;
-    }
-  }, [note.id]);
+    if (failedRef.current || savingRef.current || (note.localSeq || 0) < seenSeq.current) return;
+    seenSeq.current = note.localSeq || 0;
+    setTitle(note.title || '');
+    setRemindAt(note.remind_at || null);
+    const safe = DOMPurify.sanitize(note.content || '', { FORBID_TAGS: ['style', 'iframe'], FORBID_ATTR: ['style'] });
+    if (editorRef.current && editorRef.current.innerHTML !== safe) editorRef.current.innerHTML = safe;
+  }, [note]);
 
   // Update browser tab title
   useEffect(() => {
@@ -36,48 +44,47 @@ export default function NoteEditor({ note }) {
     return () => window.removeEventListener('reminder-cleared', handleReminderCleared);
   }, [note.id]);
 
-  const save = useCallback(async (data) => {
-    setSaveStatus('saving');
-    try {
-      const res = await fetch(`/api/notes/${note.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      if (res.ok) {
-        setSaveStatus('saved');
-        window.dispatchEvent(new CustomEvent('note-updated'));
-      } else {
-        setSaveStatus('error');
-      }
-    } catch {
-      setSaveStatus('error');
-    }
-  }, [note.id]);
+  useEffect(() => {
+    const protectDraft = e => {
+      if (failedRef.current || savingRef.current) { e.preventDefault(); e.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', protectDraft);
+    return () => window.removeEventListener('beforeunload', protectDraft);
+  }, []);
 
-  const debouncedSave = useCallback((data) => {
-    setSaveStatus('unsaved');
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-    }
-    saveTimerRef.current = setTimeout(() => {
-      save(data);
-    }, 1000);
-  }, [save]);
+  const save = useCallback(async (data) => {
+    draftRef.current = { ...draftRef.current, ...data };
+    savingRef.current++;
+    setSaveStatus('saving');
+    const commit = async () => {
+      try {
+        const persisted = await onSave(note.id, failedRef.current ? draftRef.current : data);
+        seenSeq.current = Math.max(seenSeq.current, persisted.localSeq || 0);
+        failedRef.current = false;
+      } catch { failedRef.current = true; }
+      finally {
+        savingRef.current--;
+        setSaveStatus(failedRef.current ? 'error' : savingRef.current ? 'saving' : 'saved');
+      }
+    };
+    saveChain.current = saveChain.current.then(commit, commit);
+    await saveChain.current;
+  }, [onSave, note.id]);
+
+  // Persist immediately; only the network synchronization is debounced.
+  const debouncedSave = save;
 
   function handleTitleChange(e) {
     const newTitle = e.target.value;
     setTitle(newTitle);
     debouncedSave({
       title: newTitle,
-      content: editorRef.current?.innerHTML || '',
     });
   }
 
   function handleEditorInput() {
     debouncedSave({
-      title,
-      content: editorRef.current?.innerHTML || '',
+      content: DOMPurify.sanitize(editorRef.current?.innerHTML || '', { FORBID_TAGS: ['style', 'iframe'], FORBID_ATTR: ['style'] }),
     });
   }
 
@@ -87,6 +94,7 @@ export default function NoteEditor({ note }) {
   }
 
   function handleImageClick() {
+    if (!navigator.onLine) { alert('Connect to the internet to add images. Text edits are saved offline.'); return; }
     fileInputRef.current?.click();
   }
 
@@ -121,7 +129,10 @@ export default function NoteEditor({ note }) {
   async function handleDownloadPdf() {
     const html2pdf = (await import('html2pdf.js')).default;
     const element = document.createElement('div');
-    element.innerHTML = `<h1 style="font-size:24px;font-weight:700;margin-bottom:12px;">${title || 'Untitled'}</h1>` + (editorRef.current?.innerHTML || '');
+    const heading = document.createElement('h1');
+    heading.textContent = title || 'Untitled';
+    element.append(heading);
+    element.insertAdjacentHTML('beforeend', DOMPurify.sanitize(editorRef.current?.innerHTML || ''));
     element.style.fontFamily = '-apple-system, BlinkMacSystemFont, sans-serif';
     element.style.color = '#3C3C43';
     element.style.lineHeight = '1.7';
@@ -151,27 +162,13 @@ export default function NoteEditor({ note }) {
   }
 
   async function handleSetReminder(dateStr) {
-    const res = await fetch(`/api/notes/${note.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ remind_at: dateStr }),
-    });
-    if (res.ok) {
-      setRemindAt(dateStr);
-      window.dispatchEvent(new CustomEvent('note-updated'));
-    }
+    setRemindAt(dateStr);
+    await save({ remind_at: dateStr });
   }
 
   async function handleClearReminder() {
-    const res = await fetch(`/api/notes/${note.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ remind_at: null }),
-    });
-    if (res.ok) {
-      setRemindAt(null);
-      window.dispatchEvent(new CustomEvent('note-updated'));
-    }
+    setRemindAt(null);
+    await save({ remind_at: null });
   }
 
   function handleReminderChange(e) {
@@ -194,7 +191,7 @@ export default function NoteEditor({ note }) {
   }
 
   const statusText = {
-    saved: 'Saved',
+    saved: 'Saved on device',
     saving: 'Saving...',
     unsaved: 'Editing',
     error: 'Save failed',
@@ -251,7 +248,7 @@ export default function NoteEditor({ note }) {
           />
         </div>
         <span className={`${styles.saveStatus} ${styles[saveStatus]}`}>
-          {statusText[saveStatus]}
+          {statusText[saveStatus]}{saveStatus === 'error' && <button onClick={() => save(draftRef.current || {})}>Retry save</button>}
         </span>
       </div>
 

@@ -1,6 +1,8 @@
 import { auth } from '@/lib/auth';
 import pool from '@/lib/db';
 import crypto from 'crypto';
+import { notesStore } from '@/lib/server-notes';
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const session = await auth();
@@ -8,12 +10,7 @@ export async function GET() {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const result = await pool.query(
-    'SELECT id, title, content, updated_at, remind_at FROM notes WHERE user_id = $1 ORDER BY updated_at DESC',
-    [session.user.id]
-  );
-
-  return Response.json(result.rows);
+  return Response.json(await notesStore.list(session.user.id), { headers: { 'Cache-Control': 'private, no-store' } });
 }
 
 export async function POST() {
@@ -22,6 +19,7 @@ export async function POST() {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  await notesStore.ready();
   const id = crypto.randomUUID();
   const result = await pool.query(
     'INSERT INTO notes (id, user_id) VALUES ($1, $2) RETURNING id, title, content, created_at, updated_at',

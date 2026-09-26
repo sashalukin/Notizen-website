@@ -1,10 +1,9 @@
 'use client';
 
-import { useSession, signOut } from 'next-auth/react';
 import styles from './UserMenu.module.css';
 
-export default function UserMenu() {
-  const { data: session } = useSession();
+export default function UserMenu({ user, onSignOut }) {
+  const session = user ? { user } : null;
 
   if (!session?.user) return null;
 
@@ -35,7 +34,7 @@ export default function UserMenu() {
       </button>
       <button
         className={styles.signOutButton}
-        onClick={() => signOut({ callbackUrl: '/' })}
+        onClick={onSignOut}
         title="Sign out"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

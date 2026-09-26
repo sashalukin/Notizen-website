@@ -1,4 +1,5 @@
 import './globals.css';
+import ServiceWorkerRegistration from '@/components/ServiceWorkerRegistration';
 import { SessionProvider } from 'next-auth/react';
 
 export const metadata = {
@@ -20,6 +21,7 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body>
         <SessionProvider>
+          <ServiceWorkerRegistration />
           {children}
         </SessionProvider>
       </body>

@@ -1,6 +1,6 @@
 .sidebar {
   width: 280px;
-  height: 100vh;
+  height: 100%;
   background-color: var(--bg-sidebar);
   border-right: 1px solid var(--border-color);
   display: flex;
@@ -133,3 +133,5 @@
   color: var(--text-meta);
   font-size: 14px;
 }
+
+@media (max-width: 600px) { .sidebar { width: 155px; } .noteDate { display: none; } .deleteButton { opacity: 1; } }
