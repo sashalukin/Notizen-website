@@ -42,7 +42,7 @@ export default function NotesWorkspace() {
     try {
       const result = await synchronize(acceptUser, refresh);
       if (alive.current) {
-        setStatus(result.busy || result.pending ? 'pending' : 'synced');
+        setStatus(!navigator.onLine ? 'offline' : result.busy || result.pending ? 'pending' : 'synced');
         setMessage('');
         broadcast();
       }
