@@ -138,3 +138,28 @@
   height: 0;
   pointer-events: none;
 }
+
+.toolbarButton:disabled { opacity: 0.45; cursor: wait; }
+.contentArea figure[data-audio-attachment] {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+.contentArea figure[data-audio-attachment] figcaption {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  margin-bottom: 8px;
+}
+.contentArea audio { display: block; width: 100%; max-width: 100%; }
+.contentArea button[data-remove-audio] {
+  display: block;
+  margin-top: 6px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--text-meta);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}

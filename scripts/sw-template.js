@@ -74,7 +74,7 @@ self.addEventListener('fetch', event => {
     })());
   } else if (url.origin === self.location.origin && ASSETS.includes(url.pathname)) {
     event.respondWith((async () => (await (await caches.open(SHELL)).match(url.pathname)) || fetch(req))());
-  } else if (imageAllowed(url)) {
+  } else if (req.destination === 'image' && imageAllowed(url)) {
     event.respondWith((async () => {
       try {
         const response = await fetch(req);

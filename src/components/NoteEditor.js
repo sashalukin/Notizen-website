@@ -19,6 +19,11 @@ export default function NoteEditor({ note, onSave, offline = false, reminderDeli
   const seenSeq = useRef(note.localSeq || 0);
   const draftRef = useRef(null);
   const fileInputRef = useRef(null);
+  const audioInputRef = useRef(null);
+  const uploadController = useRef(null);
+  const [audioUploading, setAudioUploading] = useState(false);
+  const [audioError, setAudioError] = useState('');
+  useEffect(() => () => { uploadController.current?.abort(); }, []);
   const reminderInputRef = useRef(null);
 
   useEffect(() => {
@@ -60,7 +65,7 @@ export default function NoteEditor({ note, onSave, offline = false, reminderDeli
     seenSeq.current = note.localSeq || 0;
     setTitle(note.title || '');
     setRemindAt(note.remind_at || null);
-    const safe = DOMPurify.sanitize(note.content || '', { FORBID_TAGS: ['style', 'iframe'], FORBID_ATTR: ['style'] });
+    const safe = DOMPurify.sanitize(note.content || '', { FORBID_TAGS: ['style', 'iframe'], FORBID_ATTR: ['style'], ADD_ATTR: ['contenteditable'] });
     if (editorRef.current && editorRef.current.innerHTML !== safe) editorRef.current.innerHTML = safe;
   }, [note]);
 
@@ -112,7 +117,7 @@ export default function NoteEditor({ note, onSave, offline = false, reminderDeli
 
   function handleEditorInput() {
     debouncedSave({
-      content: DOMPurify.sanitize(editorRef.current?.innerHTML || '', { FORBID_TAGS: ['style', 'iframe'], FORBID_ATTR: ['style'] }),
+      content: DOMPurify.sanitize(editorRef.current?.innerHTML || '', { FORBID_TAGS: ['style', 'iframe'], FORBID_ATTR: ['style'], ADD_ATTR: ['contenteditable'] }),
     });
   }
 
@@ -152,6 +157,62 @@ export default function NoteEditor({ note, onSave, offline = false, reminderDeli
 
     // Reset file input
     e.target.value = '';
+  }
+
+  function handleAudioClick() {
+    setAudioError('');
+    if (!navigator.onLine) { setAudioError('Connect to the internet to upload audio.'); return; }
+    audioInputRef.current?.click();
+  }
+
+  async function handleAudioUpload(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || audioUploading) return;
+    setAudioError('');
+    if (!file.size || file.size > 20 * 1024 * 1024) {
+      setAudioError('Choose an audio file up to 20 MB.'); return;
+    }
+    const controller = new AbortController();
+    uploadController.current = controller;
+    setAudioUploading(true);
+    try {
+      const form = new FormData(); form.append('file', file); form.append('kind', 'audio');
+      const response = await fetch('/api/upload', { method: 'POST', body: form, signal: controller.signal });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Audio upload failed.');
+      if (controller.signal.aborted || !editorRef.current) return;
+      // Build DOM nodes, never interpolate filenames into HTML. Append to the
+      // current content so typing during an upload cannot be overwritten.
+      const attachment = document.createElement('figure');
+      attachment.dataset.audioAttachment = '';
+      attachment.contentEditable = 'false';
+      const caption = document.createElement('figcaption'); caption.textContent = file.name;
+      const player = document.createElement('audio');
+      player.controls = true; player.preload = 'metadata'; player.src = result.url;
+      player.setAttribute('aria-label', file.name);
+      const remove = document.createElement('button');
+      remove.type = 'button'; remove.dataset.removeAudio = ''; remove.textContent = 'Remove';
+      remove.setAttribute('aria-label', `Remove audio ${file.name}`);
+      attachment.append(caption, player, remove);
+      const paragraph = document.createElement('p'); paragraph.append(document.createElement('br'));
+      editorRef.current.append(attachment, paragraph);
+      handleEditorInput();
+    } catch (error) {
+      if (!controller.signal.aborted) setAudioError(error.message || 'Audio upload failed. Please try again.');
+    } finally {
+      if (!controller.signal.aborted) setAudioUploading(false);
+      if (uploadController.current === controller) uploadController.current = null;
+    }
+  }
+
+  function handleContentClick(e) {
+    const remove = e.target.closest?.('[data-remove-audio]');
+    const attachment = remove?.closest('[data-audio-attachment]');
+    if (attachment && editorRef.current?.contains(attachment)) {
+      attachment.querySelector('audio')?.pause();
+      attachment.remove(); handleEditorInput();
+    }
   }
 
   async function handleDownloadPdf() {
@@ -254,6 +315,18 @@ export default function NoteEditor({ note, onSave, offline = false, reminderDeli
           </button>
           <button
             className={styles.toolbarButton}
+            onClick={handleAudioClick}
+            disabled={audioUploading}
+            title="Attach audio"
+            aria-label="Attach audio"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 18V5l12-2v13M9 9l12-2" />
+              <ellipse cx="6" cy="18" rx="3" ry="3" /><ellipse cx="18" cy="16" rx="3" ry="3" />
+            </svg>
+          </button>
+          <button
+            className={styles.toolbarButton}
             onClick={handleDownloadPdf}
             title="Download as PDF"
           >
@@ -285,6 +358,8 @@ export default function NoteEditor({ note, onSave, offline = false, reminderDeli
         </span>}
       </div>
 
+      {audioUploading && <div className={styles.reminderHelp} role="status">Uploading audio…</div>}
+      {audioError && <div className={styles.reminderHelp} role="alert">{audioError}</div>}
       {remindAt && <div className={styles.reminderHelp}>
         {formatReminderTime(remindAt)} · Keep Notizen open for reminders.
         {notificationPermission === 'default' && <button onClick={enableNotifications}>Enable notifications</button>}
@@ -307,11 +382,14 @@ export default function NoteEditor({ note, onSave, offline = false, reminderDeli
         className={styles.contentArea}
         contentEditable
         suppressContentEditableWarning
+        onClick={handleContentClick}
+        onErrorCapture={e => { if (e.target.tagName === 'AUDIO') setAudioError('Audio could not be played. Check your connection or try another audio format.'); }}
         onInput={handleEditorInput}
         onKeyDown={handleKeyDown}
         data-placeholder="Start writing..."
       />
 
+      <input ref={audioInputRef} type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.opus,.webm,.flac,.aac" onChange={handleAudioUpload} aria-label="Audio file" style={{ display: 'none' }} />
       <input
         ref={fileInputRef}
         type="file"
