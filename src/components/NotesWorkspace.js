@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { clearNativeNotifications } from '@/lib/reminder-notifications';
 import { signOut } from 'next-auth/react';
 import Sidebar from './Sidebar';
 import NoteEditor from './NoteEditor';
@@ -37,6 +38,7 @@ export default function NotesWorkspace() {
     if (userRef.current?.id && userRef.current.id !== next.id) {
       setNotes([]);
       navigator.serviceWorker?.controller?.postMessage({ type: 'CLEAR_IMAGES' });
+      clearNativeNotifications();
     }
     userRef.current = next;
     setUser(next);
@@ -196,6 +198,7 @@ export default function NotesWorkspace() {
       await signOut({ redirect: false });
       await store.clearAccount(user.id);
       navigator.serviceWorker?.controller?.postMessage({ type: 'CLEAR_IMAGES' });
+      clearNativeNotifications();
       channelRef.current?.postMessage('logout');
       window.location.assign('/');
     } catch { setMessage('Could not sign out. Please retry.'); }

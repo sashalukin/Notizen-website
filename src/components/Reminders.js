@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import * as store from '@/lib/offline/store';
-import { reminderTag, showReminderNotification } from '@/lib/reminder-notifications';
+import { reminderTag, showReminderNotification, hasNativeNotifications, notificationState } from '@/lib/reminder-notifications';
 
 export default function Reminders({ notes, userId, onSave, onError }) {
   const current = useRef({ notes, onSave, onError });
@@ -24,14 +24,23 @@ export default function Reminders({ notes, userId, onSave, onError }) {
         const receipt = await db.get('meta', receiptKey);
         accepted = receipt === note.remind_at;
         if (!accepted) {
-          if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+          const native = hasNativeNotifications();
+          if (native) {
+            // Inactive WebViews must not consume a reminder: check again on resume.
+            if (document.visibilityState !== 'visible' || !(await notificationState()).active || !alive) return;
+          } else if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
           attempted.add(key);
-          await showReminderNotification({ body: latest.title || 'Untitled', tag: key, id: note.id });
+          try {
+            await showReminderNotification({ body: latest.title || 'Untitled', tag: key, id: note.id });
+          } catch (error) {
+            if (!native) throw error;
+            // Native trigger is one-way. Reset even if posting fails or Android blocks it.
+          }
           accepted = true;
         }
         attempted.add(key);
         if (!alive) return;
-        // Persist acceptance before resetting so a failed local write/reload cannot resend it.
+        // Persist browser acceptance/native trigger before resetting to prevent duplicates on reload.
         await db.put('meta', note.remind_at, receiptKey);
         if (!alive) return;
         await current.current.onSave(note.id, { remind_at: null }, false, note.remind_at);

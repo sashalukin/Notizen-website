@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import styles from './NoteEditor.module.css';
 import DOMPurify from 'dompurify';
-import { reminderTag, closeReminderNotification } from '@/lib/reminder-notifications';
+import { reminderTag, closeReminderNotification, notificationState, requestNotificationPermission } from '@/lib/reminder-notifications';
 
 export default function NoteEditor({ note, onSave, offline = false, reminderDeliveryError }) {
   const [title, setTitle] = useState(note.title || '');
@@ -22,15 +22,20 @@ export default function NoteEditor({ note, onSave, offline = false, reminderDeli
   const reminderInputRef = useRef(null);
 
   useEffect(() => {
-    const update = () => setNotificationPermission(typeof Notification === 'undefined' ? 'unsupported' : Notification.permission);
+    let alive = true;
+    const update = async () => {
+      try { const state = await notificationState(); if (alive) setNotificationPermission(state.permission); }
+      catch { if (alive) setNotificationPermission('unsupported'); }
+    };
     update();
     window.addEventListener('focus', update);
-    return () => window.removeEventListener('focus', update);
+    window.addEventListener('notizen-resume', update);
+    return () => { alive = false; window.removeEventListener('focus', update); window.removeEventListener('notizen-resume', update); };
   }, []);
 
   async function enableNotifications() {
     try {
-      setNotificationPermission(await Notification.requestPermission());
+      setNotificationPermission(await requestNotificationPermission());
     }
     catch { setReminderError('System notifications are unavailable here.'); }
   }
@@ -283,7 +288,7 @@ export default function NoteEditor({ note, onSave, offline = false, reminderDeli
       {remindAt && <div className={styles.reminderHelp}>
         {formatReminderTime(remindAt)} · Keep Notizen open for reminders.
         {notificationPermission === 'default' && <button onClick={enableNotifications}>Enable notifications</button>}
-        {notificationPermission === 'denied' && <span> Notifications are blocked. Enable them in browser settings to receive reminders.</span>}
+        {notificationPermission === 'denied' && <span> Notifications are blocked. Enable them in your browser or app notification settings to receive reminders.</span>}
         {notificationPermission === 'unsupported' && <span> System notifications are unavailable here.</span>}
       </div>}
       {reminderError && <div className={styles.reminderHelp} role="alert">{reminderError}</div>}
