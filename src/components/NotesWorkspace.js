@@ -214,7 +214,7 @@ export default function NotesWorkspace() {
       “{n.title || 'Untitled'}” changed on another device. Your version is safe.
       <button onClick={() => resolve(n, true)}>Keep both</button><button onClick={() => resolve(n, false)}>Use server version</button>
     </div>)}</div>}
-    {user && <Reminders key={user.id} notes={visible} userId={user.id} onSave={save} onSelect={navigate} />}
+    {user && <Reminders key={user.id} notes={visible} userId={user.id} onSelect={navigate} />}
     {user ? <div className={styles.body}>
       <Sidebar notes={visible} loading={loading} activeNoteId={selected} onSelect={navigate} onCreate={create} onDelete={remove} user={user} onSignOut={logout} />
       <main className={styles.main}>{active ? <NoteEditor key={active.id} note={active} onSave={save} offline={status === 'offline'} /> : <div className={styles.empty}>{loading ? 'Loading…' : selected ? 'This note is not available on this device.' : 'Select a note or create a new one'}</div>}</main>

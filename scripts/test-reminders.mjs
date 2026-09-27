@@ -61,13 +61,14 @@ try {
   let due=await schedule();await persistedReminder(due);
   const permission=await page.evaluate(()=>Notification.permission);
   if(permission==='default') await page.getByRole('button',{name:'Enable notifications',exact:true}).waitFor();
-  else await page.getByText('Notifications are blocked in browser settings;', {exact:false}).waitFor();
+  else await page.getByText('Notifications are blocked.', {exact:false}).waitFor();
   await page.clock.setFixedTime(new Date(Date.parse(due)+1000));
-  await page.getByRole('alert').filter({hasText:'Reminder: Reminder delivery'}).waitFor();
+  await sleep(1200);
+  assert.equal(await page.getByRole('alert').filter({hasText:'Reminder: Reminder delivery'}).count(),0);
   assert.equal((await db.query('SELECT remind_at FROM notes WHERE id=$1',[id])).rows[0].remind_at.toISOString(),due,'No silent clearing without permission');
-  await page.getByRole('button',{name:'Dismiss reminder',exact:true}).click();
+  page.once('dialog',d=>d.accept());await page.getByTitle(/^Reminder:/).click();
   await eventually(async()=> (await db.query('SELECT remind_at FROM notes WHERE id=$1',[id])).rows[0].remind_at===null,'explicit dismissal persists');
-  console.log('PASS: missing permission shows persistent in-app reminder instead of silently losing it');
+  console.log('PASS: missing permission retains scheduled reminder without an in-app banner');
 
   await context.grantPermissions(['notifications'],{origin:url});
   await page.evaluate(()=>{
@@ -80,14 +81,15 @@ try {
   });
   due=await schedule();await persistedReminder(due);
   await page.clock.setFixedTime(new Date(Date.parse(due)+1000));
-  await page.getByRole('button',{name:'Dismiss reminder',exact:true}).waitFor();
+  await page.getByTitle(/^Reminder:/).waitFor();
+  assert.equal(await page.locator('[aria-label="Due reminders"]').count(),0);
   try { await eventually(()=>page.evaluate(()=>window.acceptedNotifications.length===1),'browser accepted service-worker notification'); }
   catch(e) { console.log(await page.evaluate(()=>({permission:Notification.permission,errors:window.notificationErrors})));throw e; }
   const notification=await page.evaluate(()=>window.acceptedNotifications[0]);
   assert.deepEqual(notification,{title:'Notizen reminder',body:'Reminder delivery',url:`/notes/${id}`});
-  await page.getByRole('button',{name:'Dismiss reminder',exact:true}).click();
+  page.once('dialog',d=>d.accept());await page.getByTitle(/^Reminder:/).click();
   await page.waitForFunction(async()=> (await (await navigator.serviceWorker.getRegistration('/')).getNotifications()).length===0);
-  console.log('PASS: repeat reminder on the same note uses service-worker notification and dismissal closes it');
+  console.log('PASS: repeat reminder uses service-worker notification and bell cancellation closes it');
 
   due=await schedule();await persistedReminder(due);
   page.once('dialog',d=>d.accept());await page.getByTitle(/^Reminder:/).click();
@@ -100,17 +102,19 @@ try {
   await page.evaluate(()=>Object.defineProperty(window,'Notification',{value:undefined,configurable:true}));
   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
   due=await schedule();await persistedReminder(due);
-  await page.getByText('System notifications are unavailable here;', {exact:false}).waitFor();
+  await page.getByText('System notifications are unavailable here.', {exact:false}).waitFor();
   await context.setOffline(true);await page.clock.setFixedTime(new Date(Date.parse(due)+1000));
-  await page.getByRole('button',{name:'Dismiss reminder',exact:true}).waitFor();
+  await page.getByTitle(/^Reminder:/).waitFor();
+  assert.equal(await page.locator('[aria-label="Due reminders"]').count(),0);
   await page.reload();
-  await page.getByRole('button',{name:'Dismiss reminder',exact:true}).waitFor();
-  await page.getByRole('button',{name:'Dismiss reminder',exact:true}).click();
+  await page.getByTitle(/^Reminder:/).waitFor();
+  assert.equal(await page.locator('[aria-label="Due reminders"]').count(),0);
+  page.once('dialog',d=>d.accept());await page.getByTitle(/^Reminder:/).click();
   await page.getByRole('button',{name:'Dismiss reminder',exact:true}).waitFor({state:'hidden'});
   await context.setOffline(false);await synced(page);
   await eventually(async()=> (await db.query('SELECT remind_at FROM notes WHERE id=$1',[id])).rows[0].remind_at===null,'offline dismissal syncs');
   assert.deepEqual(runtimeErrors,[]);
-  console.log('PASS: WebView-style unsupported API, offline reminder/reload, and dismissal synchronization');
+  console.log('PASS: unsupported API and offline reload retain reminder without a banner; cancellation synchronizes');
 } finally {
   await browser?.close();server.kill('SIGTERM');await db.end();
 }

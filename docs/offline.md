@@ -49,10 +49,10 @@ Rollback caveat: the old application does not understand tombstones. After offli
 
 ## Reminders
 
-Reminders are currently checked while the website/WebView is running, and overdue reminders appear when it resumes or reopens. They are not scheduled by a server, Web Push, or native Android background service. Closing or suspending Notizen can delay delivery.
+Reminders are currently checked while the website/WebView is running, and overdue reminders can notify when it resumes or reopens. They are not scheduled by a server, Web Push, or native Android background service. Closing or suspending Notizen can delay delivery.
 
-After choosing a future reminder time, use **Enable notifications** if the browser has not granted permission. Blocked permissions must be changed in browser/site settings. Supported browsers use `ServiceWorkerRegistration.showNotification`; clicking the notification opens the note. Android WebView has no Web Notifications API, so the existing Android app shows the in-app reminder only.
+After choosing a future reminder time, use **Enable notifications** if the browser has not granted permission. Blocked permissions must be changed in browser/site settings. Supported browsers use `ServiceWorkerRegistration.showNotification`; clicking the notification opens the note. Android WebView has no Web Notifications API, so the existing Android app cannot deliver system reminders.
 
-Due reminders stay visible in Notizen until explicitly dismissed, including offline and after reload. Notification denial or delivery failure does not delete the reminder. Re-scheduling the same note creates a new notification identity. Dismissing a stale alert cannot clear a reminder changed in another tab. Native Android system notifications and closed-app delivery require a separate implementation.
+There is no in-app “Reminder: …” banner. Reminders stay scheduled until canceled using the note’s bell button, including offline and after reload. Canceling also closes any matching system notification. Notification denial or delivery failure does not delete the reminder. Re-scheduling the same note creates a new notification identity. Native Android system notifications and closed-app delivery require a separate implementation.
 
 Verification: `node scripts/test-db.mjs`, `npm run build`, `xvfb-run -a node scripts/test-reminders.mjs`, then `node scripts/test-db.mjs --stop`. Tests use an isolated local database; no production notes are accessed. The reminder check needs full Chromium (`npx playwright install chromium`); headless-shell notification permissions are not representative of a normal browser.

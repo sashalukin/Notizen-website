@@ -29,7 +29,7 @@ export default function NoteEditor({ note, onSave, offline = false }) {
 
   async function enableNotifications() {
     try { setNotificationPermission(await Notification.requestPermission()); }
-    catch { setReminderError('System notifications are unavailable here. Reminders will appear in Notizen.'); }
+    catch { setReminderError('System notifications are unavailable here.'); }
   }
 
   // Keep fast local writes visually quiet without delaying persistence.
@@ -284,8 +284,8 @@ export default function NoteEditor({ note, onSave, offline = false }) {
       {remindAt && <div className={styles.reminderHelp}>
         {formatReminderTime(remindAt)} · Keep Notizen open for reminders.
         {notificationPermission === 'default' && <button onClick={enableNotifications}>Enable notifications</button>}
-        {notificationPermission === 'denied' && <span> Notifications are blocked in browser settings; reminders will appear here.</span>}
-        {notificationPermission === 'unsupported' && <span> System notifications are unavailable here; reminders will appear in the app.</span>}
+        {notificationPermission === 'denied' && <span> Notifications are blocked. Enable them in browser settings to receive reminders.</span>}
+        {notificationPermission === 'unsupported' && <span> System notifications are unavailable here.</span>}
       </div>}
       {reminderError && <div className={styles.reminderHelp} role="alert">{reminderError}</div>}
 
