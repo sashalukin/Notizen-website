@@ -9,6 +9,8 @@ export default function NoteEditor({ note, onSave, offline = false }) {
   const [saveStatus, setSaveStatus] = useState('saved');
   const [displayedSaveStatus, setDisplayedSaveStatus] = useState('saved');
   const [remindAt, setRemindAt] = useState(note.remind_at || null);
+  const [notificationPermission, setNotificationPermission] = useState('unsupported');
+  const [reminderError, setReminderError] = useState('');
   const editorRef = useRef(null);
   const savingRef = useRef(0);
   const failedRef = useRef(false);
@@ -17,6 +19,18 @@ export default function NoteEditor({ note, onSave, offline = false }) {
   const draftRef = useRef(null);
   const fileInputRef = useRef(null);
   const reminderInputRef = useRef(null);
+
+  useEffect(() => {
+    const update = () => setNotificationPermission(typeof Notification === 'undefined' ? 'unsupported' : Notification.permission);
+    update();
+    window.addEventListener('focus', update);
+    return () => window.removeEventListener('focus', update);
+  }, []);
+
+  async function enableNotifications() {
+    try { setNotificationPermission(await Notification.requestPermission()); }
+    catch { setReminderError('System notifications are unavailable here. Reminders will appear in Notizen.'); }
+  }
 
   // Keep fast local writes visually quiet without delaying persistence.
   // Slow saves still show progress; failures are never debounced.
@@ -166,9 +180,6 @@ export default function NoteEditor({ note, onSave, offline = false }) {
         handleClearReminder();
       }
     } else {
-      if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-        Notification.requestPermission();
-      }
       reminderInputRef.current?.showPicker();
     }
   }
@@ -185,7 +196,13 @@ export default function NoteEditor({ note, onSave, offline = false }) {
 
   function handleReminderChange(e) {
     if (e.target.value) {
-      handleSetReminder(new Date(e.target.value).toISOString());
+      const date = new Date(e.target.value);
+      if (!Number.isFinite(date.getTime()) || date.getTime() <= Date.now()) {
+        setReminderError('Choose a future time for the reminder.');
+      } else {
+        setReminderError('');
+        handleSetReminder(date.toISOString());
+      }
     }
     e.target.value = '';
   }
@@ -263,6 +280,14 @@ export default function NoteEditor({ note, onSave, offline = false }) {
           {statusText[displayedSaveStatus]}{displayedSaveStatus === 'error' && <button onClick={() => save(draftRef.current || {})}>Retry save</button>}
         </span>}
       </div>
+
+      {remindAt && <div className={styles.reminderHelp}>
+        {formatReminderTime(remindAt)} · Keep Notizen open for reminders.
+        {notificationPermission === 'default' && <button onClick={enableNotifications}>Enable notifications</button>}
+        {notificationPermission === 'denied' && <span> Notifications are blocked in browser settings; reminders will appear here.</span>}
+        {notificationPermission === 'unsupported' && <span> System notifications are unavailable here; reminders will appear in the app.</span>}
+      </div>}
+      {reminderError && <div className={styles.reminderHelp} role="alert">{reminderError}</div>}
 
       <input
         type="text"

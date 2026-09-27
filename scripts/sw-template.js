@@ -2,6 +2,19 @@
 const SHELL = 'notizen-shell-__VERSION__';
 const IMAGES = 'notizen-images-v1';
 const ASSETS = __ASSETS__;
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const path = event.notification.data?.url;
+  if (typeof path !== 'string' || !/^\/notes\/[a-zA-Z0-9-]+$/.test(path)) return;
+  const target = new URL(path, self.location.origin).href;
+  event.waitUntil((async () => {
+    const clients = await self.clients.matchAll({ type: 'window' });
+    const existing = clients.find(client => client.url === target);
+    if (existing) return existing.focus();
+    // Never navigate another tab away from an unsaved editor.
+    return self.clients.openWindow(target);
+  })());
+});
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(SHELL).then(cache => cache.addAll(ASSETS)));
   // Do not skipWaiting: an open editor must finish with the assets it was loaded with.
@@ -26,7 +39,14 @@ async function rememberImage(request, response) {
   } catch { /* Image cache quota must never block text notes. */ }
 }
 self.addEventListener('message', event => {
-  if (event.data?.type === 'CLEAR_IMAGES') event.waitUntil(caches.delete(IMAGES));
+  if (event.data?.type === 'CLEAR_IMAGES') event.waitUntil((async () => {
+    await caches.delete(IMAGES);
+    // This message accompanies logout/account changes. Remove old private reminders too.
+    if (self.registration.getNotifications) {
+      const notifications = await self.registration.getNotifications();
+      notifications.forEach(notification => notification.close());
+    }
+  })());
   if (event.data?.type === 'CACHE_IMAGES') event.waitUntil((async () => {
     const urls = [...new Set(event.data.urls || [])].slice(0, 80);
     for (const value of urls) {

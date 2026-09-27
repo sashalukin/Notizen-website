@@ -46,3 +46,13 @@ No new environment variables are needed. The existing runtime database user must
 Deployment uses the existing Cloud Run service `notizen` in project `main-tokenizer-485420-h8`, region `us-central1`, preserving runtime configuration. Build the committed source, deploy with no traffic, verify the new revision and migration, then promote. Record the previous revision before promotion.
 
 Rollback caveat: the old application does not understand tombstones. After offline mutations begin, rolling back to the pre-offline image can reveal deleted notes or bypass revision checks. Prefer a forward fix; do not treat the old image as a data-compatible rollback without adding the same tombstone/version behavior.
+
+## Reminders
+
+Reminders are currently checked while the website/WebView is running, and overdue reminders appear when it resumes or reopens. They are not scheduled by a server, Web Push, or native Android background service. Closing or suspending Notizen can delay delivery.
+
+After choosing a future reminder time, use **Enable notifications** if the browser has not granted permission. Blocked permissions must be changed in browser/site settings. Supported browsers use `ServiceWorkerRegistration.showNotification`; clicking the notification opens the note. Android WebView has no Web Notifications API, so the existing Android app shows the in-app reminder only.
+
+Due reminders stay visible in Notizen until explicitly dismissed, including offline and after reload. Notification denial or delivery failure does not delete the reminder. Re-scheduling the same note creates a new notification identity. Dismissing a stale alert cannot clear a reminder changed in another tab. Native Android system notifications and closed-app delivery require a separate implementation.
+
+Verification: `node scripts/test-db.mjs`, `npm run build`, `xvfb-run -a node scripts/test-reminders.mjs`, then `node scripts/test-db.mjs --stop`. Tests use an isolated local database; no production notes are accessed. The reminder check needs full Chromium (`npx playwright install chromium`); headless-shell notification permissions are not representative of a normal browser.

@@ -4,6 +4,17 @@ import assert from 'node:assert/strict';
 import * as s from '../src/lib/offline/store.js';
 const user = 'offline-tests';
 const id = () => crypto.randomUUID();
+test('dismissing a stale reminder cannot erase a newly scheduled reminder', async () => {
+  const noteId = id(), first = '2026-09-27T12:00:00.000Z', next = '2026-09-28T12:00:00.000Z';
+  await s.saveLocal(user, noteId, { remind_at: first }, true);
+  await s.saveLocal(user, noteId, { remind_at: next });
+  const before = (await s.readNotes(user)).find(n => n.id === noteId);
+  const preserved = await s.saveLocal(user, noteId, { remind_at: null }, false, first);
+  assert.equal(preserved.remind_at, next);
+  assert.equal(preserved.localSeq, before.localSeq);
+  const dismissed = await s.saveLocal(user, noteId, { remind_at: null }, false, next);
+  assert.equal(dismissed.remind_at, null);
+});
 test('edit while upload is in flight preserves the newer draft and chains the version', async () => {
   const noteId = id();
   await s.saveLocal(user,noteId,{title:'first',content:'a'},true);

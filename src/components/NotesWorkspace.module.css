@@ -9,6 +9,7 @@
 .spinner { width:12px; height:12px; border:1.5px solid currentColor; border-right-color:transparent; border-radius:50%; animation:spin .8s linear infinite; }
 .preparing { color:var(--text-meta); }
 .notice { font-size:12px; padding:7px 16px; background:#fff5dc; color:#705a27; }
+.reminders { max-height:25vh; overflow-y:auto; flex-shrink:0; }
 .empty { display:flex; gap:10px; align-items:center; justify-content:center; height:100%; padding:24px; color:var(--text-meta); }
 .empty a { color:var(--accent-blue); }
 @keyframes spin { to { transform:rotate(360deg); } }

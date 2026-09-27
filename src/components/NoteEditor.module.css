@@ -117,6 +117,20 @@
   color: var(--accent-blue);
 }
 
+.reminderHelp {
+  padding: 6px 16px;
+  font-size: 12px;
+  color: var(--text-meta);
+}
+.reminderHelp button {
+  margin-left: 6px;
+  border: 0;
+  background: none;
+  color: var(--accent-blue);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .reminderInput {
   position: absolute;
   opacity: 0;

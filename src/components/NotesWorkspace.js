@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { signOut } from 'next-auth/react';
 import Sidebar from './Sidebar';
 import NoteEditor from './NoteEditor';
+import Reminders from './Reminders';
 import * as store from '@/lib/offline/store';
 import { synchronize } from '@/lib/offline/sync';
 import styles from './NotesWorkspace.module.css';
@@ -147,11 +148,11 @@ export default function NotesWorkspace() {
     window.history.pushState(null, '', id ? `/notes/${id}` : '/notes');
     setSelected(id);
   }
-  async function save(id, changes, create = false) {
+  async function save(id, changes, create = false, expectedReminder) {
     if (!userRef.current) throw new Error('Sign in before creating notes.');
     setStatus(navigator.onLine ? 'pending' : 'offline');
     try {
-      const note = await store.saveLocal(userRef.current.id, id, changes, create);
+      const note = await store.saveLocal(userRef.current.id, id, changes, create, expectedReminder);
       storageBlocked.current = false;
       setMessage('');
       await refresh(); broadcast();
@@ -213,8 +214,9 @@ export default function NotesWorkspace() {
       “{n.title || 'Untitled'}” changed on another device. Your version is safe.
       <button onClick={() => resolve(n, true)}>Keep both</button><button onClick={() => resolve(n, false)}>Use server version</button>
     </div>)}</div>}
+    {user && <Reminders key={user.id} notes={visible} userId={user.id} onSave={save} onSelect={navigate} />}
     {user ? <div className={styles.body}>
-      <Sidebar notes={visible} loading={loading} activeNoteId={selected} onSelect={navigate} onCreate={create} onDelete={remove} onSave={save} user={user} onSignOut={logout} />
+      <Sidebar notes={visible} loading={loading} activeNoteId={selected} onSelect={navigate} onCreate={create} onDelete={remove} user={user} onSignOut={logout} />
       <main className={styles.main}>{active ? <NoteEditor key={active.id} note={active} onSave={save} offline={status === 'offline'} /> : <div className={styles.empty}>{loading ? 'Loading…' : selected ? 'This note is not available on this device.' : 'Select a note or create a new one'}</div>}</main>
     </div> : <div className={styles.empty}>{loading ? 'Loading…' : <>Sign in online once to make your notes available offline. <a href="/signin">Sign in</a></>}</div>}
   </div>;

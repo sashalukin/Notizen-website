@@ -1,48 +1,9 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
 import UserMenu from './UserMenu';
 import styles from './Sidebar.module.css';
 
-export default function Sidebar({ notes, loading, activeNoteId, onSelect, onCreate, onDelete, onSave, user, onSignOut }) {
-  const notesRef = useRef([]);
-  const firedRef = useRef(new Set());
-
-  // Keep notesRef in sync
-  useEffect(() => {
-    notesRef.current = notes;
-  }, [notes]);
-
-  // Poll for due reminders every 10 seconds
-  useEffect(() => {
-    function checkReminders() {
-      notesRef.current.forEach(note => {
-        if (!note.remind_at || firedRef.current.has(note.id)) return;
-        if (new Date(note.remind_at) <= new Date()) {
-          firedRef.current.add(note.id);
-          fireReminder(note);
-        }
-      });
-    }
-
-    checkReminders();
-    const interval = setInterval(checkReminders, 10000);
-    return () => clearInterval(interval);
-  }, []);
-
-  async function fireReminder(note) {
-    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      new Notification('Notizen', {
-        body: note.title || 'Untitled',
-        icon: '/android-chrome-192x192.png',
-      });
-    }
-    try {
-      await onSave(note.id, { remind_at: null });
-      window.dispatchEvent(new CustomEvent('reminder-cleared', { detail: { noteId: note.id } }));
-    } catch { /* The workspace displays the local save error. */ }
-  }
-
+export default function Sidebar({ notes, loading, activeNoteId, onSelect, onCreate, onDelete, user, onSignOut }) {
   function stripHtml(html) {
     if (!html) return '';
     return html.replace(/<br\s*\/?>/gi, ' ').replace(/<\/?(p|div|li|h[1-6])[^>]*>/gi, ' ').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();

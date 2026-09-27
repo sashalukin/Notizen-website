@@ -29,7 +29,7 @@ export async function setAccount(user, expectedEpoch) {
 }
 export async function readNotes(userId) { return (await database()).getAllFromIndex('notes', 'user', userId); }
 export async function pending(userId) { return (await database()).getAllFromIndex('outbox', 'user', userId); }
-export async function saveLocal(userId, id, changes, create = false) {
+export async function saveLocal(userId, id, changes, create = false, expectedReminder) {
   const db = await database();
   const tx = db.transaction(['notes', 'outbox'], 'readwrite');
   tx.done.catch(() => {});
@@ -37,6 +37,11 @@ export async function saveLocal(userId, id, changes, create = false) {
   const notes = tx.objectStore('notes'), outbox = tx.objectStore('outbox');
   const old = await notes.get([userId, id]);
   if (!old && !create) { tx.abort(); throw new Error('This note is no longer available.'); }
+  // Dismissing an old alert must not clear a reminder rescheduled in another tab.
+  if (expectedReminder !== undefined && old?.remind_at !== expectedReminder) {
+    await tx.done;
+    return old;
+  }
   const now = new Date().toISOString();
   const note = { title: '', content: '', remind_at: null, version: 0, created_at: now,
     ...old, ...changes, id, userId, dirty: true, localSeq: (old?.localSeq || 0) + 1, updated_at: now };
