@@ -60,10 +60,15 @@ test('account cleanup leaves other accounts and their pending edits untouched', 
   const other='another-account',noteId=id();
   await s.saveLocal(other,noteId,{content:'private'},true);
   await s.setAccount({id:other});
+  const db = await s.database();
+  await db.put('meta', 'old-reminder', ['reminder-delivery', user, noteId]);
+  await db.put('meta', 'other-reminder', ['reminder-delivery', other, noteId]);
   await s.clearAccount(user);
   assert.equal((await s.pending(user)).length,0);
   assert.equal((await s.readNotes(other))[0].content,'private');
   assert.equal((await s.account()).id,other);
+  assert.equal(await db.get('meta', ['reminder-delivery', user, noteId]), undefined);
+  assert.equal(await db.get('meta', ['reminder-delivery', other, noteId]), 'other-reminder');
 });
 test('lease excludes another tab and is only released by its owner', async () => {
   assert.equal(await s.lease(user,'tab-a'),true);

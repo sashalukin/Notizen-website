@@ -123,6 +123,9 @@ export async function clearAccount(userId) {
     for (const key of await tx.objectStore(table).index('user').getAllKeys(userId)) await tx.objectStore(table).delete(key);
   }
   const epoch = (await tx.objectStore('meta').get('sessionEpoch')) || 0;
+  for (const key of await tx.objectStore('meta').getAllKeys()) {
+    if (Array.isArray(key) && key[0] === 'reminder-delivery' && key[1] === userId) await tx.objectStore('meta').delete(key);
+  }
   await tx.objectStore('meta').put(epoch + 1, 'sessionEpoch');
   const active = await tx.objectStore('meta').get('account');
   if (active?.id === userId) await tx.objectStore('meta').delete('account');

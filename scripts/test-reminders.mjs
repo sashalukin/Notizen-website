@@ -70,33 +70,78 @@ try {
   await eventually(async()=> (await db.query('SELECT remind_at FROM notes WHERE id=$1',[id])).rows[0].remind_at===null,'explicit dismissal persists');
   console.log('PASS: missing permission retains scheduled reminder without an in-app banner');
 
-  await context.grantPermissions(['notifications'],{origin:url});
   await page.evaluate(()=>{
-    window.acceptedNotifications=[];window.notificationErrors=[];
+    window.acceptedNotifications=[];
+    window.failNotification=false;
     const original=ServiceWorkerRegistration.prototype.showNotification;
     ServiceWorkerRegistration.prototype.showNotification=async function(title,options){
-      try { await original.call(this,title,options); } catch(e) { window.notificationErrors.push({name:e.name,message:e.message}); throw e; }
+      if (window.failNotification) throw new Error('Simulated notification service failure');
+      await original.call(this,title,options);
       window.acceptedNotifications.push({title,body:options.body,url:options.data.url});
     };
   });
+  await context.grantPermissions(['notifications'],{origin:url});
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  const accepted=()=>page.evaluate(()=>window.acceptedNotifications.filter(n=>n.title==='Notizen reminder').length);
+  const reset=async()=>{
+    await page.getByTitle('Set reminder',{exact:true}).waitFor();
+    await eventually(async()=> (await db.query('SELECT remind_at FROM notes WHERE id=$1',[id])).rows[0].remind_at===null,'automatic reminder reset persisted');
+  };
+  due=await schedule();await persistedReminder(due);
+  await page.getByRole('button',{name:'Test notification',exact:true}).click();
+  await page.getByText('Test sent to your browser.',{exact:false}).waitFor();
+  assert.equal((await db.query('SELECT remind_at FROM notes WHERE id=$1',[id])).rows[0].remind_at.toISOString(),due,'test does not clear scheduled reminder');
+  await page.clock.setFixedTime(new Date(Date.parse(due)+1000));
+  await eventually(async()=>await accepted()===1,'browser accepted service-worker notification');await reset();
+  const notification=await page.evaluate(()=>window.acceptedNotifications.find(n=>n.title==='Notizen reminder'));
+  assert.deepEqual(notification,{title:'Notizen reminder',body:'Reminder delivery',url:`/notes/${id}`});
+  const stillShown=await page.evaluate(async()=> (await(await navigator.serviceWorker.getRegistration('/')).getNotifications()).some(n=>n.title==='Notizen reminder'));
+  assert.equal(stillShown,true,'Reset must not immediately close the system notification');
+  assert.equal(await page.locator('[aria-label="Due reminders"]').count(),0);
+  console.log('PASS: test notification, automatic bell/server reset, and system notification remains available');
+
   due=await schedule();await persistedReminder(due);
   await page.clock.setFixedTime(new Date(Date.parse(due)+1000));
-  await page.getByTitle(/^Reminder:/).waitFor();
-  assert.equal(await page.locator('[aria-label="Due reminders"]').count(),0);
-  try { await eventually(()=>page.evaluate(()=>window.acceptedNotifications.length===1),'browser accepted service-worker notification'); }
-  catch(e) { console.log(await page.evaluate(()=>({permission:Notification.permission,errors:window.notificationErrors})));throw e; }
-  const notification=await page.evaluate(()=>window.acceptedNotifications[0]);
-  assert.deepEqual(notification,{title:'Notizen reminder',body:'Reminder delivery',url:`/notes/${id}`});
-  page.once('dialog',d=>d.accept());await page.getByTitle(/^Reminder:/).click();
-  await page.waitForFunction(async()=> (await (await navigator.serviceWorker.getRegistration('/')).getNotifications()).length===0);
-  console.log('PASS: repeat reminder uses service-worker notification and bell cancellation closes it');
+  await eventually(async()=>await accepted()===2,'second reminder on same note delivered');await reset();
+  console.log('PASS: a later reminder on the same note also delivers and resets');
+
+  due=await schedule();await persistedReminder(due);
+  await page.evaluate(()=>{window.failNotification=true;});
+  await page.clock.setFixedTime(new Date(Date.parse(due)+1000));
+  await page.getByRole('button',{name:'Retry notification',exact:true}).waitFor();
+  assert.equal((await db.query('SELECT remind_at FROM notes WHERE id=$1',[id])).rows[0].remind_at.toISOString(),due,'failed notification remains scheduled');
+  await page.evaluate(()=>{window.failNotification=false;});
+  await page.getByRole('button',{name:'Retry notification',exact:true}).click();
+  await eventually(async()=>await accepted()===3,'failed notification can retry');await reset();
+  console.log('PASS: notification failure is visible, not marked delivered, and retries successfully');
+
+  due=await schedule();await persistedReminder(due);
+  await page.evaluate(noteId=>{
+    const original=IDBObjectStore.prototype.put;
+    window.restoreWrites=()=>{IDBObjectStore.prototype.put=original;};
+    IDBObjectStore.prototype.put=function(value,...args){
+      if(this.name==='notes' && value.id===noteId && value.remind_at===null) throw new DOMException('Storage unavailable','QuotaExceededError');
+      return original.call(this,value,...args);
+    };
+  },id);
+  await page.clock.setFixedTime(new Date(Date.parse(due)+1000));
+  await page.getByText('Notification sent, but resetting the reminder failed.',{exact:false}).waitFor();
+  assert.equal(await accepted(),4);
+  await page.reload(); // restores writes; the durable receipt must suppress another notification
+  await reset();
+  const receipt=await page.evaluate(async ({user,id})=>{
+    const db=await new Promise(resolve=>{const r=indexedDB.open('notizen-offline');r.onsuccess=()=>resolve(r.result);});
+    const result=await new Promise(resolve=>{const r=db.transaction('meta').objectStore('meta').get(['reminder-delivery',user,id]);r.onsuccess=()=>resolve(r.result);});db.close();return result;
+  },{user,id});
+  assert.equal(receipt,due);
+  console.log('PASS: notification acceptance survives reload after reset write failure');
 
   due=await schedule();await persistedReminder(due);
   page.once('dialog',d=>d.accept());await page.getByTitle(/^Reminder:/).click();
-  await eventually(async()=> (await db.query('SELECT remind_at FROM notes WHERE id=$1',[id])).rows[0].remind_at===null,'cancel persisted');
+  await reset();
   await page.clock.setFixedTime(new Date(Date.parse(due)+1000));await sleep(1200);
   assert.equal(await page.getByRole('button',{name:'Dismiss reminder',exact:true}).count(),0);
-  console.log('PASS: canceled reminder is not delivered');
+  console.log('PASS: canceled reminder stays canceled');
 
   await context.clearPermissions();
   await page.evaluate(()=>Object.defineProperty(window,'Notification',{value:undefined,configurable:true}));

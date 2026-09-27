@@ -14,6 +14,11 @@ export default function NotesWorkspace() {
   const [loading, setLoading] = useState(true), [status, setStatus] = useState('connecting'), [message, setMessage] = useState('');
   const [backOnline, setBackOnline] = useState(false), [offlineReady, setOfflineReady] = useState(false);
   const [connectionNotice, setConnectionNotice] = useState(false);
+  const [reminderErrors, setReminderErrors] = useState({});
+  const reminderError = useCallback((note, error) => {
+    const key = `${note.userId}:${note.id}:${note.remind_at}`;
+    setReminderErrors(previous => previous[key] === error ? previous : { ...previous, [key]: error });
+  }, []);
   const disconnected = useRef(false);
   const userRef = useRef(null), channelRef = useRef(null), running = useRef(false), alive = useRef(true), schedule = useRef(null), rerun = useRef(false);
   const requestSync = useRef(() => {});
@@ -214,10 +219,10 @@ export default function NotesWorkspace() {
       “{n.title || 'Untitled'}” changed on another device. Your version is safe.
       <button onClick={() => resolve(n, true)}>Keep both</button><button onClick={() => resolve(n, false)}>Use server version</button>
     </div>)}</div>}
-    {user && <Reminders key={user.id} notes={visible} userId={user.id} onSelect={navigate} />}
+    {user && <Reminders key={user.id} notes={visible} userId={user.id} onSave={save} onError={reminderError} />}
     {user ? <div className={styles.body}>
       <Sidebar notes={visible} loading={loading} activeNoteId={selected} onSelect={navigate} onCreate={create} onDelete={remove} user={user} onSignOut={logout} />
-      <main className={styles.main}>{active ? <NoteEditor key={active.id} note={active} onSave={save} offline={status === 'offline'} /> : <div className={styles.empty}>{loading ? 'Loading…' : selected ? 'This note is not available on this device.' : 'Select a note or create a new one'}</div>}</main>
+      <main className={styles.main}>{active ? <NoteEditor key={active.id} note={active} onSave={save} offline={status === 'offline'} reminderDeliveryError={reminderErrors[`${user.id}:${active.id}:${active.remind_at}`]} /> : <div className={styles.empty}>{loading ? 'Loading…' : selected ? 'This note is not available on this device.' : 'Select a note or create a new one'}</div>}</main>
     </div> : <div className={styles.empty}>{loading ? 'Loading…' : <>Sign in online once to make your notes available offline. <a href="/signin">Sign in</a></>}</div>}
   </div>;
 }

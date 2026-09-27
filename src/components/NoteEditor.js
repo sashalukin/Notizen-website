@@ -3,14 +3,17 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import styles from './NoteEditor.module.css';
 import DOMPurify from 'dompurify';
+import { reminderTag, showReminderNotification, closeReminderNotification } from '@/lib/reminder-notifications';
 
-export default function NoteEditor({ note, onSave, offline = false }) {
+export default function NoteEditor({ note, onSave, offline = false, reminderDeliveryError }) {
   const [title, setTitle] = useState(note.title || '');
   const [saveStatus, setSaveStatus] = useState('saved');
   const [displayedSaveStatus, setDisplayedSaveStatus] = useState('saved');
   const [remindAt, setRemindAt] = useState(note.remind_at || null);
   const [notificationPermission, setNotificationPermission] = useState('unsupported');
   const [reminderError, setReminderError] = useState('');
+  const [notificationFeedback, setNotificationFeedback] = useState('');
+  const [testingNotification, setTestingNotification] = useState(false);
   const editorRef = useRef(null);
   const savingRef = useRef(0);
   const failedRef = useRef(false);
@@ -28,9 +31,26 @@ export default function NoteEditor({ note, onSave, offline = false }) {
   }, []);
 
   async function enableNotifications() {
-    try { setNotificationPermission(await Notification.requestPermission()); }
+    try {
+      setNotificationPermission(await Notification.requestPermission());
+      window.dispatchEvent(new Event('notizen-retry-reminders'));
+    }
     catch { setReminderError('System notifications are unavailable here.'); }
   }
+
+  async function testNotification() {
+    setTestingNotification(true);
+    setNotificationFeedback('');
+    try {
+      await showReminderNotification({ title: 'Notizen test', body: 'Notifications are working.',
+        tag: `notizen-test:${note.userId}`, id: note.id });
+      setNotificationFeedback('Test sent to your browser. No popup? Check browser/OS notifications and Focus or Do Not Disturb.');
+    } catch (error) { setNotificationFeedback(error.message || 'The browser could not show the notification.'); }
+    finally { setTestingNotification(false); }
+  }
+
+  // Reminder completion must update the bell even while the note body is being edited.
+  useEffect(() => { setRemindAt(note.remind_at || null); }, [note.remind_at]);
 
   // Keep fast local writes visually quiet without delaying persistence.
   // Slow saves still show progress; failures are never debounced.
@@ -59,17 +79,6 @@ export default function NoteEditor({ note, onSave, offline = false }) {
     return () => { document.title = 'Notizen'; };
   }, [title]);
 
-  // Listen for reminder-cleared events from Sidebar
-  useEffect(() => {
-    function handleReminderCleared(e) {
-      if (e.detail?.noteId === note.id) {
-        setRemindAt(null);
-      }
-    }
-    window.addEventListener('reminder-cleared', handleReminderCleared);
-    return () => window.removeEventListener('reminder-cleared', handleReminderCleared);
-  }, [note.id]);
-
   useEffect(() => {
     const protectDraft = e => {
       if (failedRef.current || savingRef.current) { e.preventDefault(); e.returnValue = ''; }
@@ -87,14 +96,16 @@ export default function NoteEditor({ note, onSave, offline = false }) {
         const persisted = await onSave(note.id, failedRef.current ? draftRef.current : data);
         seenSeq.current = Math.max(seenSeq.current, persisted.localSeq || 0);
         failedRef.current = false;
+        return persisted;
       } catch { failedRef.current = true; }
       finally {
         savingRef.current--;
+        if (!failedRef.current && !savingRef.current) draftRef.current = null;
         setSaveStatus(failedRef.current ? 'error' : savingRef.current ? 'saving' : 'saved');
       }
     };
     saveChain.current = saveChain.current.then(commit, commit);
-    await saveChain.current;
+    return await saveChain.current;
   }, [onSave, note.id]);
 
   // Persist immediately; only the network synchronization is debounced.
@@ -185,13 +196,16 @@ export default function NoteEditor({ note, onSave, offline = false }) {
   }
 
   async function handleSetReminder(dateStr) {
+    setNotificationFeedback('');
     setRemindAt(dateStr);
     await save({ remind_at: dateStr });
   }
 
   async function handleClearReminder() {
+    const previousTime = remindAt;
     setRemindAt(null);
-    await save({ remind_at: null });
+    const persisted = await save({ remind_at: null });
+    if (persisted?.remind_at === null) await closeReminderNotification(reminderTag(note.userId, note.id, previousTime));
   }
 
   function handleReminderChange(e) {
@@ -284,10 +298,13 @@ export default function NoteEditor({ note, onSave, offline = false }) {
       {remindAt && <div className={styles.reminderHelp}>
         {formatReminderTime(remindAt)} · Keep Notizen open for reminders.
         {notificationPermission === 'default' && <button onClick={enableNotifications}>Enable notifications</button>}
+        {notificationPermission === 'granted' && <button onClick={testNotification} disabled={testingNotification}>{testingNotification ? 'Sending…' : 'Test notification'}</button>}
         {notificationPermission === 'denied' && <span> Notifications are blocked. Enable them in browser settings to receive reminders.</span>}
         {notificationPermission === 'unsupported' && <span> System notifications are unavailable here.</span>}
       </div>}
       {reminderError && <div className={styles.reminderHelp} role="alert">{reminderError}</div>}
+      {reminderDeliveryError && <div className={styles.reminderHelp} role="alert">{reminderDeliveryError} <button onClick={() => window.dispatchEvent(new Event('notizen-retry-reminders'))}>Retry notification</button></div>}
+      {notificationFeedback && <div className={styles.reminderHelp} role="status">{notificationFeedback}</div>}
 
       <input
         type="text"
