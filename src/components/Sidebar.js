@@ -6,7 +6,7 @@ import styles from './Sidebar.module.css';
 export default function Sidebar({ notes, loading, activeNoteId, onSelect, onCreate, onDelete, user, onSignOut }) {
   function stripHtml(html) {
     if (!html) return '';
-    return html.replace(/<br\s*\/?>/gi, ' ').replace(/<\/?(p|div|li|h[1-6])[^>]*>/gi, ' ').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+    return html.replace(/<button\b[^>]*\bdata-remove-audio\b[^>]*>[\s\S]*?<\/button>/gi, '').replace(/<br\s*\/?>/gi, ' ').replace(/<\/?(p|div|li|figure|figcaption|h[1-6])[^>]*>/gi, ' ').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
   }
 
   function formatDate(dateStr) {

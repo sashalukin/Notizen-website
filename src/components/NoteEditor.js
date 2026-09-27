@@ -222,6 +222,7 @@ export default function NoteEditor({ note, onSave, offline = false, reminderDeli
     heading.textContent = title || 'Untitled';
     element.append(heading);
     element.insertAdjacentHTML('beforeend', DOMPurify.sanitize(editorRef.current?.innerHTML || ''));
+    element.querySelectorAll('[data-remove-audio]').forEach(button => button.remove());
     element.style.fontFamily = '-apple-system, BlinkMacSystemFont, sans-serif';
     element.style.color = '#3C3C43';
     element.style.lineHeight = '1.7';
