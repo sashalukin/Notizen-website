@@ -25,7 +25,7 @@ async function authenticatedContext(who=user) {
   await c.addCookies([{name:'authjs.session-token',value:token,url,httpOnly:true,sameSite:'Lax'}]);
   return c;
 }
-async function synced(page) { await page.getByTestId('sync-status').filter({hasText:'Synchronized'}).waitFor({timeout:30000}); }
+async function synced(page) { await page.locator('[data-sync-state="synced"]').waitFor({timeout:30000}); }
 async function newNote(page) {
   const previous=page.url();
   await page.getByTitle('New Note',{exact:true}).click();
@@ -44,10 +44,12 @@ try {
   const c=await authenticatedContext(); let page=await c.newPage();
   const pageErrors=[];page.on('pageerror',e=>pageErrors.push(e.message));
   await page.goto(url+'/notes'); await synced(page);
+  assert.equal(await page.getByTestId('sync-status').count(),0, 'No banner on normal online startup');
   await page.evaluate(()=>navigator.serviceWorker.ready);
   await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
   await newNote(page);
   await title(page,'Offline integration');await body(page,'Original text');await synced(page);
+  assert.equal(await page.getByTestId('sync-status').count(),0, 'Ordinary saves do not show the connection banner');
   const noteId=new URL(page.url()).pathname.split('/')[2];
   await c.setOffline(true);
   await page.getByTestId('sync-status').filter({hasText:'No internet'}).waitFor();
@@ -69,7 +71,13 @@ try {
   await c.setOffline(false);await synced(page);
   assert.equal((await db.query('SELECT content FROM notes WHERE id=$1',[newId])).rows[0].content,'New offline body');
   assert.equal((await db.query('SELECT title FROM notes WHERE id=$1',[noteId])).rows[0].title,'Edited in airplane mode');
-  console.log('PASS: reconnect syncs creates and updates');
+  assert.ok((await page.getByTestId('sync-status').innerText()).includes('Back online'));
+  assert.ok((await page.getByTestId('sync-status').innerText()).includes('Synchronized'));
+  await page.getByTestId('sync-status').waitFor({state:'hidden',timeout:7000});
+  await page.evaluate(()=>window.dispatchEvent(new Event('notizen-resume')));
+  await synced(page);
+  assert.equal(await page.getByTestId('sync-status').count(),0, 'Routine resume does not reopen the banner');
+  console.log('PASS: reconnect syncs; notice disappears and stays hidden during normal online use');
   const device2=await authenticatedContext();const p2=await device2.newPage();await p2.goto(url+`/notes/${newId}`);await synced(p2);
   await c.setOffline(true);await body(page,'device one draft');await localTitle(page,'Created without internet');await sleep(300);
   await body(p2,'device two version');await synced(p2);

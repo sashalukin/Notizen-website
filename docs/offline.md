@@ -2,7 +2,7 @@
 
 ## User behavior
 
-Open Notizen and sign in online once on each browser/device. Let the initial notes sync and the “Preparing offline access” indicator finish. Note text is then available offline, including after reloading or reopening the app. Notes can be created, edited and deleted locally. The small status strip shows “No internet”, then green “Back online”, a sync spinner and “Synchronized”. Editor “Saved on device” is distinct from server acknowledgement.
+Open Notizen and sign in online once on each browser/device. Allow the initial notes and offline app files to download before disconnecting. Note text is then available offline, including after reloading or reopening the app. Notes can be created, edited and deleted locally. The small status strip stays hidden during normal online use. After an outage it shows “No internet”, then green “Back online”, a sync spinner and “Synchronized”, and disappears three seconds after synchronization finishes. Editor “Saved on device” is distinct from server acknowledgement.
 
 Synchronization runs on connection restoration, focus/visibility/resume, shortly after local edits, and every 30 seconds while visible. Android `MainActivity.onResume` also dispatches `notizen-resume`. Android WebView Background Sync is not assumed. Nothing promises uploading while the application is closed.
 

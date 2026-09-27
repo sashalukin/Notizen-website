@@ -12,6 +12,8 @@ export default function NotesWorkspace() {
   const [user, setUser] = useState(null), [notes, setNotes] = useState([]), [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true), [status, setStatus] = useState('connecting'), [message, setMessage] = useState('');
   const [backOnline, setBackOnline] = useState(false), [offlineReady, setOfflineReady] = useState(false);
+  const [connectionNotice, setConnectionNotice] = useState(false);
+  const disconnected = useRef(false);
   const userRef = useRef(null), channelRef = useRef(null), running = useRef(false), alive = useRef(true), schedule = useRef(null), rerun = useRef(false);
   const requestSync = useRef(() => {});
   const refreshGeneration = useRef(0);
@@ -65,7 +67,6 @@ export default function NotesWorkspace() {
   }, [sync]);
   useEffect(() => {
     alive.current = true;
-    let reconnectTimer;
     setSelected(selectedPath());
     if ('BroadcastChannel' in window) {
       const channel = new BroadcastChannel('notizen-offline');
@@ -87,11 +88,10 @@ export default function NotesWorkspace() {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.ready.then(() => { if (alive.current) setOfflineReady(true); });
     }
-    const offline = () => { setStatus('offline'); setBackOnline(false); };
+    const offline = () => { setStatus('offline'); setConnectionNotice(true); setBackOnline(false); };
     const online = () => {
       setBackOnline(true);
-      clearTimeout(reconnectTimer);
-      reconnectTimer = setTimeout(() => setBackOnline(false), 5000);
+      setConnectionNotice(true);
       sync();
     };
     const resume = () => { if (document.visibilityState === 'visible') sync(); };
@@ -102,13 +102,32 @@ export default function NotesWorkspace() {
     const poll = setInterval(() => { if (document.visibilityState === 'visible') sync(); }, 30000);
     return () => {
       alive.current = false;
-      clearTimeout(schedule.current); clearTimeout(reconnectTimer); clearInterval(poll);
+      clearTimeout(schedule.current); clearInterval(poll);
       channelRef.current?.close(); channelRef.current = null;
       window.removeEventListener('offline', offline); window.removeEventListener('online', online);
       window.removeEventListener('notizen-resume', resume); window.removeEventListener('pageshow', resume); window.removeEventListener('focus', resume);
       window.removeEventListener('popstate', pop); document.removeEventListener('visibilitychange', resume);
     };
   }, [sync, acceptUser, refresh]);
+  // Ordinary startup, autosave and polling stay silent. Only an outage opens the notice.
+  useEffect(() => {
+    if (status === 'offline') {
+      disconnected.current = true;
+      setConnectionNotice(true);
+      setBackOnline(false);
+    } else if (status === 'synced' && disconnected.current) {
+      disconnected.current = false;
+      setBackOnline(true);
+    }
+  }, [status]);
+  useEffect(() => {
+    if (!connectionNotice || status !== 'synced') return;
+    const timer = setTimeout(() => {
+      setConnectionNotice(false);
+      setBackOnline(false);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [connectionNotice, status]);
   useEffect(() => {
     if (!navigator.onLine || !offlineReady) return;
     const timer = setTimeout(() => {
@@ -179,16 +198,17 @@ export default function NotesWorkspace() {
   const visible = notes.filter(n => !n.deleted_at);
   const active = visible.find(n => n.id === selected);
   const label = status === 'offline' ? 'No internet' : status === 'syncing' ? 'Syncing' : status === 'synced' ? 'Synchronized' : status === 'auth' ? 'Sign in to sync' : status === 'error' ? 'Could not sync' : status === 'connecting' ? 'Connecting' : conflicts.length ? 'Conflict to review' : 'Waiting to sync';
-  return <div className={styles.workspace}>
-    <div className={`${styles.status} ${status === 'offline' || status === 'error' || status === 'auth' ? styles.muted : styles.green}`} role="status" aria-live="polite" data-testid="sync-status">
+  return <div className={styles.workspace} data-sync-state={status}>
+    {connectionNotice && <div className={`${styles.status} ${status === 'offline' || status === 'error' || status === 'auth' ? styles.muted : styles.green}`} role="status" aria-live="polite" data-testid="sync-status">
       {backOnline && status !== 'offline' && <span>Back online <span aria-hidden="true">·</span> </span>}
       {status === 'syncing' ? <span className={styles.spinner} aria-hidden="true" /> : status === 'synced' ? <span aria-hidden="true">✓</span> : null}
       <span>{label}</span>
       {['error','pending'].includes(status) && <button onClick={sync}>Retry</button>}
       {status === 'auth' && <a href="/signin?callbackUrl=/notes">Sign in</a>}
       {!offlineReady && status === 'synced' && <span className={styles.preparing}> · Preparing offline access</span>}
-    </div>
-    {message && <div className={styles.notice} role="alert">{message} <button onClick={() => setMessage('')} aria-label="Dismiss">×</button></div>}
+    </div>}
+    {!connectionNotice && user && status === 'auth' && <div className={styles.notice} role="alert">Sign in to sync. <a href="/signin?callbackUrl=/notes">Sign in</a></div>}
+    {message && <div className={styles.notice} role="alert">{message} {status === 'error' && <button onClick={sync}>Retry</button>} <button onClick={() => setMessage('')} aria-label="Dismiss">×</button></div>}
     {!!conflicts.length && <div className={styles.notice}>{conflicts.map(n => <div key={n.id}>
       “{n.title || 'Untitled'}” changed on another device. Your version is safe.
       <button onClick={() => resolve(n, true)}>Keep both</button><button onClick={() => resolve(n, false)}>Use server version</button>
