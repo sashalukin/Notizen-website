@@ -71,10 +71,11 @@ try {
   console.log('PASS: missing permission retains scheduled reminder without an in-app banner');
 
   await page.evaluate(()=>{
-    window.acceptedNotifications=[];
+    window.acceptedNotifications=[];window.notificationAttempts=0;
     window.failNotification=false;
     const original=ServiceWorkerRegistration.prototype.showNotification;
     ServiceWorkerRegistration.prototype.showNotification=async function(title,options){
+      window.notificationAttempts++;
       if (window.failNotification) throw new Error('Simulated notification service failure');
       await original.call(this,title,options);
       window.acceptedNotifications.push({title,body:options.body,url:options.data.url});
@@ -88,9 +89,7 @@ try {
     await eventually(async()=> (await db.query('SELECT remind_at FROM notes WHERE id=$1',[id])).rows[0].remind_at===null,'automatic reminder reset persisted');
   };
   due=await schedule();await persistedReminder(due);
-  await page.getByRole('button',{name:'Test notification',exact:true}).click();
-  await page.getByText('Test sent to your browser.',{exact:false}).waitFor();
-  assert.equal((await db.query('SELECT remind_at FROM notes WHERE id=$1',[id])).rows[0].remind_at.toISOString(),due,'test does not clear scheduled reminder');
+  assert.equal(await page.getByRole('button',{name:'Test notification',exact:true}).count(),0);
   await page.clock.setFixedTime(new Date(Date.parse(due)+1000));
   await eventually(async()=>await accepted()===1,'browser accepted service-worker notification');await reset();
   const notification=await page.evaluate(()=>window.acceptedNotifications.find(n=>n.title==='Notizen reminder'));
@@ -98,7 +97,7 @@ try {
   const stillShown=await page.evaluate(async()=> (await(await navigator.serviceWorker.getRegistration('/')).getNotifications()).some(n=>n.title==='Notizen reminder'));
   assert.equal(stillShown,true,'Reset must not immediately close the system notification');
   assert.equal(await page.locator('[aria-label="Due reminders"]').count(),0);
-  console.log('PASS: test notification, automatic bell/server reset, and system notification remains available');
+  console.log('PASS: no test control; automatic bell/server reset keeps the system notification available');
 
   due=await schedule();await persistedReminder(due);
   await page.clock.setFixedTime(new Date(Date.parse(due)+1000));
@@ -108,12 +107,18 @@ try {
   due=await schedule();await persistedReminder(due);
   await page.evaluate(()=>{window.failNotification=true;});
   await page.clock.setFixedTime(new Date(Date.parse(due)+1000));
-  await page.getByRole('button',{name:'Retry notification',exact:true}).waitFor();
+  await page.getByText('Notification could not be shown.',{exact:false}).waitFor();
   assert.equal((await db.query('SELECT remind_at FROM notes WHERE id=$1',[id])).rows[0].remind_at.toISOString(),due,'failed notification remains scheduled');
-  await page.evaluate(()=>{window.failNotification=false;});
-  await page.getByRole('button',{name:'Retry notification',exact:true}).click();
-  await eventually(async()=>await accepted()===3,'failed notification can retry');await reset();
-  console.log('PASS: notification failure is visible, not marked delivered, and retries successfully');
+  await page.clock.setFixedTime(new Date(Date.parse(due)+61000));
+  await page.evaluate(()=>{window.failNotification=false;window.dispatchEvent(new Event('focus'));window.dispatchEvent(new Event('notizen-resume'));});
+  await sleep(1600);
+  assert.equal(await page.evaluate(()=>window.notificationAttempts),3,'No automatic or resume retries');
+  assert.equal(await page.getByRole('button',{name:'Retry notification',exact:true}).count(),0);
+  page.once('dialog',d=>d.accept());await page.getByTitle(/^Reminder:/).click();await reset();
+  due=await schedule();await persistedReminder(due);
+  await page.clock.setFixedTime(new Date(Date.parse(due)+1000));
+  await eventually(async()=>await accepted()===3,'newly scheduled reminder delivers');await reset();
+  console.log('PASS: failed sends are not retried; a newly scheduled reminder still works');
 
   due=await schedule();await persistedReminder(due);
   await page.evaluate(noteId=>{
@@ -125,7 +130,7 @@ try {
     };
   },id);
   await page.clock.setFixedTime(new Date(Date.parse(due)+1000));
-  await page.getByText('Notification sent, but resetting the reminder failed.',{exact:false}).waitFor();
+  await page.getByText('Notification sent, but the reminder could not be reset.',{exact:false}).waitFor();
   assert.equal(await accepted(),4);
   await page.reload(); // restores writes; the durable receipt must suppress another notification
   await reset();

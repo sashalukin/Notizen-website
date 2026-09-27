@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import styles from './NoteEditor.module.css';
 import DOMPurify from 'dompurify';
-import { reminderTag, showReminderNotification, closeReminderNotification } from '@/lib/reminder-notifications';
+import { reminderTag, closeReminderNotification } from '@/lib/reminder-notifications';
 
 export default function NoteEditor({ note, onSave, offline = false, reminderDeliveryError }) {
   const [title, setTitle] = useState(note.title || '');
@@ -12,8 +12,6 @@ export default function NoteEditor({ note, onSave, offline = false, reminderDeli
   const [remindAt, setRemindAt] = useState(note.remind_at || null);
   const [notificationPermission, setNotificationPermission] = useState('unsupported');
   const [reminderError, setReminderError] = useState('');
-  const [notificationFeedback, setNotificationFeedback] = useState('');
-  const [testingNotification, setTestingNotification] = useState(false);
   const editorRef = useRef(null);
   const savingRef = useRef(0);
   const failedRef = useRef(false);
@@ -33,20 +31,8 @@ export default function NoteEditor({ note, onSave, offline = false, reminderDeli
   async function enableNotifications() {
     try {
       setNotificationPermission(await Notification.requestPermission());
-      window.dispatchEvent(new Event('notizen-retry-reminders'));
     }
     catch { setReminderError('System notifications are unavailable here.'); }
-  }
-
-  async function testNotification() {
-    setTestingNotification(true);
-    setNotificationFeedback('');
-    try {
-      await showReminderNotification({ title: 'Notizen test', body: 'Notifications are working.',
-        tag: `notizen-test:${note.userId}`, id: note.id });
-      setNotificationFeedback('Test sent to your browser. No popup? Check browser/OS notifications and Focus or Do Not Disturb.');
-    } catch (error) { setNotificationFeedback(error.message || 'The browser could not show the notification.'); }
-    finally { setTestingNotification(false); }
   }
 
   // Reminder completion must update the bell even while the note body is being edited.
@@ -196,7 +182,6 @@ export default function NoteEditor({ note, onSave, offline = false, reminderDeli
   }
 
   async function handleSetReminder(dateStr) {
-    setNotificationFeedback('');
     setRemindAt(dateStr);
     await save({ remind_at: dateStr });
   }
@@ -298,13 +283,11 @@ export default function NoteEditor({ note, onSave, offline = false, reminderDeli
       {remindAt && <div className={styles.reminderHelp}>
         {formatReminderTime(remindAt)} · Keep Notizen open for reminders.
         {notificationPermission === 'default' && <button onClick={enableNotifications}>Enable notifications</button>}
-        {notificationPermission === 'granted' && <button onClick={testNotification} disabled={testingNotification}>{testingNotification ? 'Sending…' : 'Test notification'}</button>}
         {notificationPermission === 'denied' && <span> Notifications are blocked. Enable them in browser settings to receive reminders.</span>}
         {notificationPermission === 'unsupported' && <span> System notifications are unavailable here.</span>}
       </div>}
       {reminderError && <div className={styles.reminderHelp} role="alert">{reminderError}</div>}
-      {reminderDeliveryError && <div className={styles.reminderHelp} role="alert">{reminderDeliveryError} <button onClick={() => window.dispatchEvent(new Event('notizen-retry-reminders'))}>Retry notification</button></div>}
-      {notificationFeedback && <div className={styles.reminderHelp} role="status">{notificationFeedback}</div>}
+      {reminderDeliveryError && <div className={styles.reminderHelp} role="alert">{reminderDeliveryError}</div>}
 
       <input
         type="text"
