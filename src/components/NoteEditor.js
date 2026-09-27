@@ -7,6 +7,7 @@ import DOMPurify from 'dompurify';
 export default function NoteEditor({ note, onSave, offline = false }) {
   const [title, setTitle] = useState(note.title || '');
   const [saveStatus, setSaveStatus] = useState('saved');
+  const [displayedSaveStatus, setDisplayedSaveStatus] = useState('saved');
   const [remindAt, setRemindAt] = useState(note.remind_at || null);
   const editorRef = useRef(null);
   const savingRef = useRef(0);
@@ -16,6 +17,17 @@ export default function NoteEditor({ note, onSave, offline = false }) {
   const draftRef = useRef(null);
   const fileInputRef = useRef(null);
   const reminderInputRef = useRef(null);
+
+  // Keep fast local writes visually quiet without delaying persistence.
+  // Slow saves still show progress; failures are never debounced.
+  useEffect(() => {
+    if (saveStatus !== 'saving') {
+      setDisplayedSaveStatus(saveStatus);
+      return;
+    }
+    const timer = setTimeout(() => setDisplayedSaveStatus('saving'), 500);
+    return () => clearTimeout(timer);
+  }, [saveStatus]);
 
   // Refresh remote changes without resetting the caret for our own local saves.
   useEffect(() => {
@@ -247,8 +259,8 @@ export default function NoteEditor({ note, onSave, offline = false }) {
             onChange={handleReminderChange}
           />
         </div>
-        {(saveStatus !== 'saved' || offline) && <span className={`${styles.saveStatus} ${styles[saveStatus]}`}>
-          {statusText[saveStatus]}{saveStatus === 'error' && <button onClick={() => save(draftRef.current || {})}>Retry save</button>}
+        {(displayedSaveStatus !== 'saved' || offline) && <span className={`${styles.saveStatus} ${styles[displayedSaveStatus]}`}>
+          {statusText[displayedSaveStatus]}{displayedSaveStatus === 'error' && <button onClick={() => save(draftRef.current || {})}>Retry save</button>}
         </span>}
       </div>
 
