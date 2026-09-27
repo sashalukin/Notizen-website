@@ -215,7 +215,7 @@ export default function NotesWorkspace() {
     </div>)}</div>}
     {user ? <div className={styles.body}>
       <Sidebar notes={visible} loading={loading} activeNoteId={selected} onSelect={navigate} onCreate={create} onDelete={remove} onSave={save} user={user} onSignOut={logout} />
-      <main className={styles.main}>{active ? <NoteEditor key={active.id} note={active} onSave={save} /> : <div className={styles.empty}>{loading ? 'Loading…' : selected ? 'This note is not available on this device.' : 'Select a note or create a new one'}</div>}</main>
+      <main className={styles.main}>{active ? <NoteEditor key={active.id} note={active} onSave={save} offline={status === 'offline'} /> : <div className={styles.empty}>{loading ? 'Loading…' : selected ? 'This note is not available on this device.' : 'Select a note or create a new one'}</div>}</main>
     </div> : <div className={styles.empty}>{loading ? 'Loading…' : <>Sign in online once to make your notes available offline. <a href="/signin">Sign in</a></>}</div>}
   </div>;
 }

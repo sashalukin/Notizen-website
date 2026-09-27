@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import styles from './NoteEditor.module.css';
 import DOMPurify from 'dompurify';
 
-export default function NoteEditor({ note, onSave }) {
+export default function NoteEditor({ note, onSave, offline = false }) {
   const [title, setTitle] = useState(note.title || '');
   const [saveStatus, setSaveStatus] = useState('saved');
   const [remindAt, setRemindAt] = useState(note.remind_at || null);
@@ -247,9 +247,9 @@ export default function NoteEditor({ note, onSave }) {
             onChange={handleReminderChange}
           />
         </div>
-        <span className={`${styles.saveStatus} ${styles[saveStatus]}`}>
+        {(saveStatus !== 'saved' || offline) && <span className={`${styles.saveStatus} ${styles[saveStatus]}`}>
           {statusText[saveStatus]}{saveStatus === 'error' && <button onClick={() => save(draftRef.current || {})}>Retry save</button>}
-        </span>
+        </span>}
       </div>
 
       <input
