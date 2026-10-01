@@ -48,9 +48,3 @@ CREATE TABLE IF NOT EXISTS notes (
 
 CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id, updated_at DESC);
 
-CREATE TABLE IF NOT EXISTS android_auth_codes (
-  code           TEXT PRIMARY KEY,
-  session_token  TEXT NOT NULL,
-  code_challenge TEXT,
-  created_at     TIMESTAMP DEFAULT NOW()
-);
