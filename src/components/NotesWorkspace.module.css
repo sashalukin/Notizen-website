@@ -1,0 +1,15 @@
+.workspace { display:flex; flex-direction:column; height:100dvh; overflow:hidden; }
+.body { display:flex; flex:1; min-height:0; }
+.main { flex:1; min-width:0; overflow-y:auto; }
+.status { display:flex; align-items:center; justify-content:center; gap:6px; min-height:28px; padding:5px 12px; font-size:12px; background:var(--toolbar-bg); border-bottom:1px solid var(--border-color); flex-wrap:wrap; }
+.green { color:#267344; }
+.muted { color:#756346; }
+.status button,.notice button { color:inherit; background:none; border:0; text-decoration:underline; cursor:pointer; padding:2px 6px; font-size:12px; }
+.status a { text-decoration:underline; }
+.spinner { width:12px; height:12px; border:1.5px solid currentColor; border-right-color:transparent; border-radius:50%; animation:spin .8s linear infinite; }
+.preparing { color:var(--text-meta); }
+.notice { font-size:12px; padding:7px 16px; background:#fff5dc; color:#705a27; }
+.empty { display:flex; gap:10px; align-items:center; justify-content:center; height:100%; padding:24px; color:var(--text-meta); }
+.empty a { color:var(--accent-blue); }
+@keyframes spin { to { transform:rotate(360deg); } }
+@media(prefers-reduced-motion:reduce) { .spinner { animation:none; } }

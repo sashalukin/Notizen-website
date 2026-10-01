@@ -1,113 +1,12 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
 import UserMenu from './UserMenu';
 import styles from './Sidebar.module.css';
 
-export default function Sidebar() {
-  const [notes, setNotes] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const router = useRouter();
-  const pathname = usePathname();
-
-  const activeNoteId = pathname.startsWith('/notes/') ? pathname.split('/')[2] : null;
-  const notesRef = useRef([]);
-  const firedRef = useRef(new Set());
-
-  async function fetchNotes() {
-    try {
-      const res = await fetch('/api/notes');
-      if (res.ok) {
-        const data = await res.json();
-        setNotes(data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch notes:', err);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    fetchNotes();
-  }, [pathname]);
-
-  useEffect(() => {
-    const channel = new BroadcastChannel('notizen-sync');
-
-    function handleNoteUpdated() {
-      fetchNotes();
-      channel.postMessage('sync');
-    }
-
-    function handleBroadcast() {
-      fetchNotes();
-    }
-
-    window.addEventListener('note-updated', handleNoteUpdated);
-    channel.addEventListener('message', handleBroadcast);
-    return () => {
-      window.removeEventListener('note-updated', handleNoteUpdated);
-      channel.removeEventListener('message', handleBroadcast);
-      channel.close();
-    };
-  }, []);
-
-  // Keep notesRef in sync
-  useEffect(() => {
-    notesRef.current = notes;
-  }, [notes]);
-
-  // Poll for due reminders every 10 seconds
-  useEffect(() => {
-    function checkReminders() {
-      notesRef.current.forEach(note => {
-        if (!note.remind_at || firedRef.current.has(note.id)) return;
-        if (new Date(note.remind_at) <= new Date()) {
-          firedRef.current.add(note.id);
-          fireReminder(note);
-        }
-      });
-    }
-
-    checkReminders();
-    const interval = setInterval(checkReminders, 10000);
-    return () => clearInterval(interval);
-  }, []);
-
-  async function fireReminder(note) {
-    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      new Notification('Notizen', {
-        body: note.title || 'Untitled',
-        icon: '/android-chrome-192x192.png',
-      });
-    }
-    await fetch(`/api/notes/${note.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ remind_at: null }),
-    });
-    firedRef.current.delete(note.id);
-    window.dispatchEvent(new CustomEvent('reminder-cleared', { detail: { noteId: note.id } }));
-    fetchNotes();
-  }
-
-  async function handleNewNote() {
-    try {
-      const res = await fetch('/api/notes', { method: 'POST' });
-      if (res.ok) {
-        const data = await res.json();
-        router.push(`/notes/${data.id}`);
-      }
-    } catch (err) {
-      console.error('Failed to create note:', err);
-    }
-  }
-
+export default function Sidebar({ notes, loading, activeNoteId, onSelect, onCreate, onDelete, user, onSignOut }) {
   function stripHtml(html) {
     if (!html) return '';
-    return html.replace(/<br\s*\/?>/gi, ' ').replace(/<\/?(p|div|li|h[1-6])[^>]*>/gi, ' ').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+    return html.replace(/<button\b[^>]*\bdata-remove-audio\b[^>]*>[\s\S]*?<\/button>/gi, '').replace(/<br\s*\/?>/gi, ' ').replace(/<\/?(p|div|li|figure|figcaption|h[1-6])[^>]*>/gi, ' ').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
   }
 
   function formatDate(dateStr) {
@@ -132,24 +31,14 @@ export default function Sidebar() {
     e.stopPropagation();
     if (!confirm('Delete this note?')) return;
 
-    try {
-      const res = await fetch(`/api/notes/${noteId}`, { method: 'DELETE' });
-      if (res.ok) {
-        if (activeNoteId === noteId) {
-          router.push('/notes');
-        }
-        fetchNotes();
-      }
-    } catch (err) {
-      console.error('Failed to delete note:', err);
-    }
+    await onDelete(noteId);
   }
 
   return (
     <aside className={styles.sidebar}>
       <div className={styles.header}>
         <h2 className={styles.title}>Notizen</h2>
-        <button className={styles.newButton} onClick={handleNewNote} title="New Note">
+        <button className={styles.newButton} onClick={onCreate} title="New Note">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 20h9"/>
             <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
@@ -167,7 +56,7 @@ export default function Sidebar() {
             <div
               key={note.id}
               className={`${styles.noteItem} ${activeNoteId === note.id ? styles.active : ''}`}
-              onClick={() => router.push(`/notes/${note.id}`)}
+              onClick={() => onSelect(note.id)}
             >
               <div className={styles.noteItemHeader}>
                 <span className={styles.noteTitle}>{note.title || 'Untitled'}</span>
@@ -190,7 +79,7 @@ export default function Sidebar() {
         )}
       </div>
 
-      <UserMenu />
+      <UserMenu user={user} onSignOut={onSignOut} />
     </aside>
   );
 }

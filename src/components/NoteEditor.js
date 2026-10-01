@@ -2,22 +2,72 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import styles from './NoteEditor.module.css';
+import DOMPurify from 'dompurify';
+import { reminderTag, closeReminderNotification, notificationState, requestNotificationPermission } from '@/lib/reminder-notifications';
 
-export default function NoteEditor({ note }) {
+export default function NoteEditor({ note, onSave, offline = false, reminderDeliveryError }) {
   const [title, setTitle] = useState(note.title || '');
   const [saveStatus, setSaveStatus] = useState('saved');
+  const [displayedSaveStatus, setDisplayedSaveStatus] = useState('saved');
   const [remindAt, setRemindAt] = useState(note.remind_at || null);
+  const [notificationPermission, setNotificationPermission] = useState('unsupported');
+  const [reminderError, setReminderError] = useState('');
   const editorRef = useRef(null);
-  const saveTimerRef = useRef(null);
+  const savingRef = useRef(0);
+  const failedRef = useRef(false);
+  const saveChain = useRef(Promise.resolve());
+  const seenSeq = useRef(note.localSeq || 0);
+  const draftRef = useRef(null);
   const fileInputRef = useRef(null);
+  const audioInputRef = useRef(null);
+  const uploadController = useRef(null);
+  const [audioUploading, setAudioUploading] = useState(false);
+  const [audioError, setAudioError] = useState('');
+  useEffect(() => () => { uploadController.current?.abort(); }, []);
   const reminderInputRef = useRef(null);
 
-  // Initialize editor content
   useEffect(() => {
-    if (editorRef.current && note.content) {
-      editorRef.current.innerHTML = note.content;
+    let alive = true;
+    const update = async () => {
+      try { const state = await notificationState(); if (alive) setNotificationPermission(state.permission); }
+      catch { if (alive) setNotificationPermission('unsupported'); }
+    };
+    update();
+    window.addEventListener('focus', update);
+    window.addEventListener('notizen-resume', update);
+    return () => { alive = false; window.removeEventListener('focus', update); window.removeEventListener('notizen-resume', update); };
+  }, []);
+
+  async function enableNotifications() {
+    try {
+      setNotificationPermission(await requestNotificationPermission());
     }
-  }, [note.id]);
+    catch { setReminderError('System notifications are unavailable here.'); }
+  }
+
+  // Reminder completion must update the bell even while the note body is being edited.
+  useEffect(() => { setRemindAt(note.remind_at || null); }, [note.remind_at]);
+
+  // Keep fast local writes visually quiet without delaying persistence.
+  // Slow saves still show progress; failures are never debounced.
+  useEffect(() => {
+    if (saveStatus !== 'saving') {
+      setDisplayedSaveStatus(saveStatus);
+      return;
+    }
+    const timer = setTimeout(() => setDisplayedSaveStatus('saving'), 500);
+    return () => clearTimeout(timer);
+  }, [saveStatus]);
+
+  // Refresh remote changes without resetting the caret for our own local saves.
+  useEffect(() => {
+    if (failedRef.current || savingRef.current || (note.localSeq || 0) < seenSeq.current) return;
+    seenSeq.current = note.localSeq || 0;
+    setTitle(note.title || '');
+    setRemindAt(note.remind_at || null);
+    const safe = DOMPurify.sanitize(note.content || '', { FORBID_TAGS: ['style', 'iframe'], FORBID_ATTR: ['style'], ADD_ATTR: ['contenteditable'] });
+    if (editorRef.current && editorRef.current.innerHTML !== safe) editorRef.current.innerHTML = safe;
+  }, [note]);
 
   // Update browser tab title
   useEffect(() => {
@@ -25,59 +75,49 @@ export default function NoteEditor({ note }) {
     return () => { document.title = 'Notizen'; };
   }, [title]);
 
-  // Listen for reminder-cleared events from Sidebar
   useEffect(() => {
-    function handleReminderCleared(e) {
-      if (e.detail?.noteId === note.id) {
-        setRemindAt(null);
-      }
-    }
-    window.addEventListener('reminder-cleared', handleReminderCleared);
-    return () => window.removeEventListener('reminder-cleared', handleReminderCleared);
-  }, [note.id]);
+    const protectDraft = e => {
+      if (failedRef.current || savingRef.current) { e.preventDefault(); e.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', protectDraft);
+    return () => window.removeEventListener('beforeunload', protectDraft);
+  }, []);
 
   const save = useCallback(async (data) => {
+    draftRef.current = { ...draftRef.current, ...data };
+    savingRef.current++;
     setSaveStatus('saving');
-    try {
-      const res = await fetch(`/api/notes/${note.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      if (res.ok) {
-        setSaveStatus('saved');
-        window.dispatchEvent(new CustomEvent('note-updated'));
-      } else {
-        setSaveStatus('error');
+    const commit = async () => {
+      try {
+        const persisted = await onSave(note.id, failedRef.current ? draftRef.current : data);
+        seenSeq.current = Math.max(seenSeq.current, persisted.localSeq || 0);
+        failedRef.current = false;
+        return persisted;
+      } catch { failedRef.current = true; }
+      finally {
+        savingRef.current--;
+        if (!failedRef.current && !savingRef.current) draftRef.current = null;
+        setSaveStatus(failedRef.current ? 'error' : savingRef.current ? 'saving' : 'saved');
       }
-    } catch {
-      setSaveStatus('error');
-    }
-  }, [note.id]);
+    };
+    saveChain.current = saveChain.current.then(commit, commit);
+    return await saveChain.current;
+  }, [onSave, note.id]);
 
-  const debouncedSave = useCallback((data) => {
-    setSaveStatus('unsaved');
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-    }
-    saveTimerRef.current = setTimeout(() => {
-      save(data);
-    }, 1000);
-  }, [save]);
+  // Persist immediately; only the network synchronization is debounced.
+  const debouncedSave = save;
 
   function handleTitleChange(e) {
     const newTitle = e.target.value;
     setTitle(newTitle);
     debouncedSave({
       title: newTitle,
-      content: editorRef.current?.innerHTML || '',
     });
   }
 
   function handleEditorInput() {
     debouncedSave({
-      title,
-      content: editorRef.current?.innerHTML || '',
+      content: DOMPurify.sanitize(editorRef.current?.innerHTML || '', { FORBID_TAGS: ['style', 'iframe'], FORBID_ATTR: ['style'], ADD_ATTR: ['contenteditable'] }),
     });
   }
 
@@ -87,6 +127,7 @@ export default function NoteEditor({ note }) {
   }
 
   function handleImageClick() {
+    if (!navigator.onLine) { alert('Connect to the internet to add images. Text edits are saved offline.'); return; }
     fileInputRef.current?.click();
   }
 
@@ -118,10 +159,70 @@ export default function NoteEditor({ note }) {
     e.target.value = '';
   }
 
+  function handleAudioClick() {
+    setAudioError('');
+    if (!navigator.onLine) { setAudioError('Connect to the internet to upload audio.'); return; }
+    audioInputRef.current?.click();
+  }
+
+  async function handleAudioUpload(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || audioUploading) return;
+    setAudioError('');
+    if (!file.size || file.size > 20 * 1024 * 1024) {
+      setAudioError('Choose an audio file up to 20 MB.'); return;
+    }
+    const controller = new AbortController();
+    uploadController.current = controller;
+    setAudioUploading(true);
+    try {
+      const form = new FormData(); form.append('file', file); form.append('kind', 'audio');
+      const response = await fetch('/api/upload', { method: 'POST', body: form, signal: controller.signal });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Audio upload failed.');
+      if (controller.signal.aborted || !editorRef.current) return;
+      // Build DOM nodes, never interpolate filenames into HTML. Append to the
+      // current content so typing during an upload cannot be overwritten.
+      const attachment = document.createElement('figure');
+      attachment.dataset.audioAttachment = '';
+      attachment.contentEditable = 'false';
+      const caption = document.createElement('figcaption'); caption.textContent = file.name;
+      const player = document.createElement('audio');
+      player.controls = true; player.preload = 'metadata'; player.src = result.url;
+      player.setAttribute('aria-label', file.name);
+      const remove = document.createElement('button');
+      remove.type = 'button'; remove.dataset.removeAudio = ''; remove.textContent = 'Remove';
+      remove.setAttribute('aria-label', `Remove audio ${file.name}`);
+      attachment.append(caption, player, remove);
+      const paragraph = document.createElement('p'); paragraph.append(document.createElement('br'));
+      editorRef.current.append(attachment, paragraph);
+      handleEditorInput();
+    } catch (error) {
+      if (!controller.signal.aborted) setAudioError(error.message || 'Audio upload failed. Please try again.');
+    } finally {
+      if (!controller.signal.aborted) setAudioUploading(false);
+      if (uploadController.current === controller) uploadController.current = null;
+    }
+  }
+
+  function handleContentClick(e) {
+    const remove = e.target.closest?.('[data-remove-audio]');
+    const attachment = remove?.closest('[data-audio-attachment]');
+    if (attachment && editorRef.current?.contains(attachment)) {
+      attachment.querySelector('audio')?.pause();
+      attachment.remove(); handleEditorInput();
+    }
+  }
+
   async function handleDownloadPdf() {
     const html2pdf = (await import('html2pdf.js')).default;
     const element = document.createElement('div');
-    element.innerHTML = `<h1 style="font-size:24px;font-weight:700;margin-bottom:12px;">${title || 'Untitled'}</h1>` + (editorRef.current?.innerHTML || '');
+    const heading = document.createElement('h1');
+    heading.textContent = title || 'Untitled';
+    element.append(heading);
+    element.insertAdjacentHTML('beforeend', DOMPurify.sanitize(editorRef.current?.innerHTML || ''));
+    element.querySelectorAll('[data-remove-audio]').forEach(button => button.remove());
     element.style.fontFamily = '-apple-system, BlinkMacSystemFont, sans-serif';
     element.style.color = '#3C3C43';
     element.style.lineHeight = '1.7';
@@ -143,40 +244,31 @@ export default function NoteEditor({ note }) {
         handleClearReminder();
       }
     } else {
-      if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-        Notification.requestPermission();
-      }
       reminderInputRef.current?.showPicker();
     }
   }
 
   async function handleSetReminder(dateStr) {
-    const res = await fetch(`/api/notes/${note.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ remind_at: dateStr }),
-    });
-    if (res.ok) {
-      setRemindAt(dateStr);
-      window.dispatchEvent(new CustomEvent('note-updated'));
-    }
+    setRemindAt(dateStr);
+    await save({ remind_at: dateStr });
   }
 
   async function handleClearReminder() {
-    const res = await fetch(`/api/notes/${note.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ remind_at: null }),
-    });
-    if (res.ok) {
-      setRemindAt(null);
-      window.dispatchEvent(new CustomEvent('note-updated'));
-    }
+    const previousTime = remindAt;
+    setRemindAt(null);
+    const persisted = await save({ remind_at: null });
+    if (persisted?.remind_at === null) await closeReminderNotification(reminderTag(note.userId, note.id, previousTime));
   }
 
   function handleReminderChange(e) {
     if (e.target.value) {
-      handleSetReminder(new Date(e.target.value).toISOString());
+      const date = new Date(e.target.value);
+      if (!Number.isFinite(date.getTime()) || date.getTime() <= Date.now()) {
+        setReminderError('Choose a future time for the reminder.');
+      } else {
+        setReminderError('');
+        handleSetReminder(date.toISOString());
+      }
     }
     e.target.value = '';
   }
@@ -194,7 +286,7 @@ export default function NoteEditor({ note }) {
   }
 
   const statusText = {
-    saved: 'Saved',
+    saved: 'Saved on device',
     saving: 'Saving...',
     unsaved: 'Editing',
     error: 'Save failed',
@@ -220,6 +312,18 @@ export default function NoteEditor({ note }) {
               <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
               <circle cx="8.5" cy="8.5" r="1.5"/>
               <polyline points="21 15 16 10 5 21"/>
+            </svg>
+          </button>
+          <button
+            className={styles.toolbarButton}
+            onClick={handleAudioClick}
+            disabled={audioUploading}
+            title="Attach audio"
+            aria-label="Attach audio"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 18V5l12-2v13M9 9l12-2" />
+              <ellipse cx="6" cy="18" rx="3" ry="3" /><ellipse cx="18" cy="16" rx="3" ry="3" />
             </svg>
           </button>
           <button
@@ -250,10 +354,21 @@ export default function NoteEditor({ note }) {
             onChange={handleReminderChange}
           />
         </div>
-        <span className={`${styles.saveStatus} ${styles[saveStatus]}`}>
-          {statusText[saveStatus]}
-        </span>
+        {(displayedSaveStatus !== 'saved' || offline) && <span className={`${styles.saveStatus} ${styles[displayedSaveStatus]}`}>
+          {statusText[displayedSaveStatus]}{displayedSaveStatus === 'error' && <button onClick={() => save(draftRef.current || {})}>Retry save</button>}
+        </span>}
       </div>
+
+      {audioUploading && <div className={styles.reminderHelp} role="status">Uploading audio…</div>}
+      {audioError && <div className={styles.reminderHelp} role="alert">{audioError}</div>}
+      {remindAt && <div className={styles.reminderHelp}>
+        {formatReminderTime(remindAt)} · Keep Notizen open for reminders.
+        {notificationPermission === 'default' && <button onClick={enableNotifications}>Enable notifications</button>}
+        {notificationPermission === 'denied' && <span> Notifications are blocked. Enable them in your browser or app notification settings to receive reminders.</span>}
+        {notificationPermission === 'unsupported' && <span> System notifications are unavailable here.</span>}
+      </div>}
+      {reminderError && <div className={styles.reminderHelp} role="alert">{reminderError}</div>}
+      {reminderDeliveryError && <div className={styles.reminderHelp} role="alert">{reminderDeliveryError}</div>}
 
       <input
         type="text"
@@ -268,11 +383,14 @@ export default function NoteEditor({ note }) {
         className={styles.contentArea}
         contentEditable
         suppressContentEditableWarning
+        onClick={handleContentClick}
+        onErrorCapture={e => { if (e.target.tagName === 'AUDIO') setAudioError('Audio could not be played. Check your connection or try another audio format.'); }}
         onInput={handleEditorInput}
         onKeyDown={handleKeyDown}
         data-placeholder="Start writing..."
       />
 
+      <input ref={audioInputRef} type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.opus,.webm,.flac,.aac" onChange={handleAudioUpload} aria-label="Audio file" style={{ display: 'none' }} />
       <input
         ref={fileInputRef}
         type="file"

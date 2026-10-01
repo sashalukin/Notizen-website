@@ -30,3 +30,6 @@ npm-debug.log*
 
 # local Claude Code settings (may contain local shell permissions/secrets)
 .claude/
+
+# Generated offline asset manifest
+/public/sw.js
