@@ -2,6 +2,7 @@ import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
 import pool from './db';
 import crypto from 'crypto';
+import { sessionCookie } from './session-cookie.mjs';
 
 function generateId() {
   return crypto.randomUUID();
@@ -134,6 +135,7 @@ const PostgresAdapter = {
 };
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  cookies: { sessionToken: sessionCookie },
   adapter: PostgresAdapter,
   providers: [
     Google({

@@ -8,6 +8,11 @@ export default function SignInPage() {
   const [loading, setLoading] = useState(false);
 
   function handleSignIn() {
+    // Native installs this origin-restricted bridge before loading the page.
+    if (window.NotizenAuth?.postMessage) {
+      window.NotizenAuth.postMessage(JSON.stringify({ type: 'SIGN_IN' }));
+      return;
+    }
     setLoading(true);
     signIn('google', { callbackUrl: '/notes' });
   }

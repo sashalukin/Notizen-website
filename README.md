@@ -1,6 +1,8 @@
 # Notizen
 
-A note-taking web app built with Next.js, designed to be embedded in an Android app via WebView (this is an educational project). Google OAuth handles ordinary browser sign-in; notes support rich text and attachments. This example baseline intentionally has no Android session handoff.
+**OAuth reference branch:** see [the paired implementation guide](docs/oauth-example.md).
+
+A note-taking web app built with Next.js, designed to be embedded in an Android app via WebView (this is an educational project). Google OAuth handles ordinary browser sign-in; notes support rich text and attachments. The example implementation adds a PKCE-protected Android session handoff.
 
 ## Stack
 
@@ -54,4 +56,3 @@ Apply `setup.sql` to a local/dev Postgres database before running. `.env` is git
 ## Deployment
 
 Deploys to **Google Cloud Run**, not Vercel — build via the included `Dockerfile` and deploy with `gcloud run deploy`. There is no CI/CD pipeline in this repo yet; deploys are manual.
-
