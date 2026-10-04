@@ -1,54 +1,51 @@
-# OAuth Flow: WebView ↔ Custom Tab with PKCE
+# Auth Tab without application handoff endpoints
 
-This document explains the sequence diagram in `oauth-flow.puml`. It covers the full authentication flow for an Android WebView-based app that uses Google OAuth via Chrome Custom Tabs.
+Branch: `experiment/auth-tab-no-handoff` in both repositories.
 
-## PKCE Setup (Steps 1–4)
+## What changes
 
-When the user taps "Sign in with Google", the WebView detects the navigation to GAIA (Google's authentication page) and intercepts it — because Google blocks OAuth from embedded WebViews (`403: disallowed_useragent`). Instead, the app opens a Chrome Custom Tab, which is a full browser that Google trusts.
+1. The existing website calls `signIn('google')` inside WebView. Auth.js handles CSRF and creates its PKCE cookie there.
+2. Android intercepts only the resulting main-frame Google authorization URL. It validates the app origin, provider host/path, existing Google callback URI, and S256 challenge.
+3. An Auth Tab-capable browser shows Google sign-in. Auth Tab is configured to capture `https://notizen.dev/api/auth/callback/google`.
+4. Instead of letting the browser execute that callback, Auth Tab returns its URI to Android.
+5. Android validates the result, consumes the pending attempt, and loads the URI into the same originating WebView. That WebView already has the Auth.js PKCE/state/nonce cookies that were created at initiation.
+6. The unchanged Auth.js callback exchanges Google's authorization code server-side, creates the normal session cookie directly in WebView, and redirects to `/notes`.
 
-Before opening the Custom Tab, the app generates a random `code_verifier` and computes `code_challenge = SHA256(code_verifier)`. The `code_challenge` is sent to the server as a query parameter. The `code_verifier` stays in the app's memory — it is never sent to the server at this point.
+There is no application OTC, cookie copying, native token exchange, new JS bridge, or call to `/android-signin`, `/api/android-callback`, or `/api/exchange`. Google's provider authorization code and Auth.js PKCE are still required. Provider secrets remain on the existing server.
 
-**Why PKCE?** Later in the flow, the server redirects to the app using an `intent://` URI with an explicit `package=` parameter, which ensures only the specified app receives the intent. This is the primary protection against interception. PKCE serves as a defense-in-depth layer — if the `intent://` delivery is ever bypassed (e.g., a bug in Chrome's intent handling, or a sideloaded app with the same package name), the one-time code is still useless without the `code_verifier` that only the original app has in memory.
+This specifically depends on Auth.js's redirect-based authorization-code flow. It is not a universal replacement for every provider or browser-SDK flow. Capturing a callback is not itself authentication; the existing Auth.js handler must finish successfully in the original cookie store.
 
-## Google OAuth (Steps 5–16)
+## HTTPS verification and device test
 
-Devs need to create one custom endpoint — `/android-signin` (steps 5–6). This endpoint starts the Google OAuth flow and sets the post-OAuth redirect to `/api/android-callback?code_challenge=xxx`, which preserves the `code_challenge` through the OAuth detour. In most auth frameworks this is a simple server-side route that returns a 302 redirect to Google. In NextAuth specifically, it needs to be a page that calls `signIn()` client-side due to CSRF handling.
+Use Chrome 137+ or another browser reporting Auth Tab support. The app explicitly rejects unsupported browsers; no ordinary Custom Tab fallback is enabled in this experiment.
 
-**Note on Google Console setup:** No additional redirect URIs need to be registered. The OAuth callback URL (`/api/auth/callback/google`) is the same one already configured for the web app's sign-in. The Android-specific endpoints (`/android-signin`, `/api/android-callback`) are never called by Google directly, so they don't need to be allowlisted.
+Auth Tab verifies the package and signing certificate against `https://notizen.dev/.well-known/assetlinks.json`. The association-only website commit `714a96b6e95f2d8858bbd02bcbfc3d6e0c7d1562` preserves the existing certificate and adds the local experiment certificate. It changes only that public association file, not any auth handler. A build signed with another certificate will need its own association; copying the source does not copy signing identity. No signing key is committed.
 
-Steps 7–16 are the standard Google OAuth flow — the account picker, token exchange, session creation, and cookie setting. Every modern auth library (NextAuth, Passport.js, Spring Security, Django allauth, Laravel Socialite) handles all of this automatically. Devs don't need to write any custom code for these steps. The only thing to note is that after OAuth completes, the auth library redirects to the callbackUrl that was set in step 5, which includes the `code_challenge` as a query parameter. The library doesn't know about `code_challenge` — it just preserves the full URL string and redirects to it.
+For a phone test, run this Android branch with an associated signing key and an Auth Tab-capable browser. Start from the app's signed-out page, tap Google sign-in, select an account, and verify that the tab closes and `/notes` is authenticated. Also test cancellation and a second attempt. No manual Open Notizen link is part of the flow. Do not log callback URLs, provider codes, cookies, or tokens.
 
-## One-Time Code Generation (Steps 17–18)
+One login attempt is allowed at a time. Cancellation, malformed results, verification failure, or launch failure resets the attempt. Activity/process recreation or closing the originating WebView requires restarting sign-in. Pending state is deliberately not serialized. A repeated ActivityResult is ignored. Existing Auth.js error pages handle an expired or rejected provider code.
 
-**The problem:** After Google OAuth, the Custom Tab has a valid session (JWT in a cookie). But the WebView is a separate browser context — it has its own cookie jar and doesn't share cookies with the Custom Tab. We need to securely transfer the session from the Custom Tab to the WebView. We can't just pass the JWT directly via a URL — anyone who sees the URL gets the session.
+## Automated verification
 
-**The solution:** The server generates a short-lived, single-use one-time code (OTC) and stores it in the database alongside the `code_challenge`. The OTC is then passed to the app via a deep link. The OTC is useless on its own because: (1) it expires after 60 seconds, (2) it can only be used once, and (3) with PKCE, it also requires the `code_verifier` to exchange.
+- Android source compilation, unit tests, and lint.
+- URI validation tests: exact callback, state matching, duplicate parameters, scheme/host/path spoofing, and provider request validation.
+- ActivityResult tests: original WebView receives the callback; repeated results are ignored; cancellation permits restarting.
+- The paired website's `tests/auth-tab.test.mjs` runs the installed Auth.js Google provider through real CSRF/PKCE processing and JWT session issuance, with only the external Google service mocked. It proves the original cookie store can finish login and an empty cookie store cannot; replay is rejected.
+- Website production build and regression tests, including a disposable local PostgreSQL database.
 
-**What devs need to implement:** One new endpoint — `/api/android-callback`. This endpoint:
-1. Reads the session from the Custom Tab's cookie (JWT) to verify the user is authenticated
-2. Generates a random one-time code
-3. Stores the OTC and `code_challenge` in the database
-4. Redirects to the app via `intent://` URI with explicit `package=` parameter, carrying the OTC
+No Android device/emulator or real Google account login was available during implementation. These checks establish the application-side mechanism, not that Chrome/Google have been verified end to end on a phone. No APK was generated as part of the experiment checks.
 
-**Database:** Devs need one new table — something like `android_auth_codes` — with at least these columns:
-- `code` (the OTC) — primary key
-- `session_token` (the JWT to transfer to the WebView)
-- `code_challenge` (from PKCE)
-- `created_at` (timestamp, for expiry checks)
+## Restore the pre-experiment code
 
-## Deep Link Handoff (Steps 19–20)
+Both GitHub repositories have tag `backup/pre-auth-tab-2026-10-04`.
 
-The server redirects the Custom Tab to an `intent://` URI with an explicit `package=` parameter (e.g., `intent://auth?otc=abc#Intent;scheme=notizen;package=com.google.android.samples.notizen;end`). Chrome delivers the intent only to the specified package — no other app can intercept it, even if it registers the same `notizen://` scheme. The Custom Tab closes and the app extracts the OTC from the intent.
+- Website source: `00858e0861e36057fe92bdb197eb1b205d590095`.
+- Android source: `077933a88b9e588c8acc20c2b933966accf936d5`.
+- Pre-experiment Cloud Run revision: `notizen-00051-yum`, initially receiving 100% traffic.
+- Its immutable image: `us-central1-docker.pkg.dev/main-tokenizer-485420-h8/notizen/notizen@sha256:8b2e5963f86138fcfd2cd1894543a1302a1b0442ecb6a41c4b9a878eee02e234`.
 
-## Token Exchange (Steps 21–25)
+The archived Cloud Build source matched every included tracked file from the website commit; only `.gitignore` was omitted by the build uploader. Uncommitted local deployment notes were not deployed and remain outside the public recovery tag.
 
-The WebView sends a POST request to `/api/exchange` with the OTC and the `code_verifier` that was generated in step 3. The server looks up the OTC, verifies that `SHA256(code_verifier)` matches the stored `code_challenge`, deletes the OTC (single use), and returns the JWT as a `Set-Cookie` header. The WebView is now authenticated.
+To roll back the website, route the `notizen` Cloud Run service in `us-central1`, project `main-tokenizer-485420-h8`, to `notizen-00051-yum`, or rebuild the saved source commit. Android rollback requires rebuilding/installing the saved source with the same signing identity. These are source/deployment recovery points, not backups of user notes, uploaded files, or secret values.
 
-**What devs need to implement:** One new endpoint — `/api/exchange`. This endpoint:
-1. Receives `otc` and `code_verifier` from the POST body
-2. Looks up the OTC in the database (must be less than 60 seconds old)
-3. Verifies PKCE: `SHA256(code_verifier) == stored code_challenge`
-4. Deletes the OTC row (prevents replay)
-5. Returns the session token as a `Set-Cookie` header
-
-This endpoint is not authenticated — it can't be, since the WebView has no session yet. The OTC + PKCE serve as the proof of identity instead.
+The website experiment branch removes the old three routes to prove independence. The association-only live update intentionally retains those routes for older Android clients. Do not deploy the route-removal commit as a general rollout while such clients still depend on it.
