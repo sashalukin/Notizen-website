@@ -4,6 +4,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { signIn } from 'next-auth/react';
+import DiscordSignInButton from '../components/DiscordSignInButton';
 import CleverSignInButton from '../components/CleverSignInButton';
 import styles from './page.module.css';
 
@@ -47,6 +48,7 @@ export default function LandingPage() {
           </svg>
           Sign in with Google
         </button>
+        <DiscordSignInButton className={styles.ctaButton} />
         <CleverSignInButton className={styles.ctaButton} />
       </div>
     </div>

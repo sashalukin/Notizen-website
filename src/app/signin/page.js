@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { signIn } from 'next-auth/react';
+import DiscordSignInButton from '../../components/DiscordSignInButton';
 import CleverSignInButton from '../../components/CleverSignInButton';
 import styles from './page.module.css';
 
@@ -34,6 +35,7 @@ export default function SignInPage() {
             Sign in with Google
           </button>
         )}
+        {!loading && <DiscordSignInButton className={styles.googleButton} />}
         {!loading && <CleverSignInButton className={styles.googleButton} />}
       </div>
     </div>
