@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { signIn } from 'next-auth/react';
+import CleverSignInButton from '../../components/CleverSignInButton';
 import styles from './page.module.css';
 
 export default function SignInPage() {
@@ -33,6 +34,7 @@ export default function SignInPage() {
             Sign in with Google
           </button>
         )}
+        {!loading && <CleverSignInButton className={styles.googleButton} />}
       </div>
     </div>
   );
