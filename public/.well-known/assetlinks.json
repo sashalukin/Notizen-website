@@ -8,7 +8,8 @@
       "package_name": "com.google.android.samples.notizen",
       "sha256_cert_fingerprints": [
         "AB:08:A2:29:ED:FD:52:21:A0:AA:74:5C:2F:66:FF:0A:90:CF:E5:4F:78:A5:72:97:18:6D:4B:CF:0F:61:65:2E",
-        "01:D1:02:25:46:C6:9B:12:43:AC:98:47:15:D6:F1:9E:17:7C:4D:B2:2D:1E:DE:4F:55:21:EC:19:02:78:4B:F9"
+        "01:D1:02:25:46:C6:9B:12:43:AC:98:47:15:D6:F1:9E:17:7C:4D:B2:2D:1E:DE:4F:55:21:EC:19:02:78:4B:F9",
+        "C0:F6:62:DD:10:25:B8:77:8C:E6:33:EB:CA:20:E5:E0:C6:20:C6:37:77:51:D2:5E:D4:7A:F0:00:12:8D:32:B3"
       ]
     }
   }
