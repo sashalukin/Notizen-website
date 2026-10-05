@@ -62,3 +62,7 @@ Deploys to **Google Cloud Run**, not Vercel — build via the included `Dockerfi
 See [the experiment and restoration notes](docs/oauth-flow.md). The paired Android branch is `experiment/auth-tab-no-handoff`.
 
 The three custom handoff endpoints and the legacy return page are removed from this branch. The existing `/api/auth/*` handlers and Google provider are unchanged. The old `android_auth_codes` table remains unused for rollback compatibility; do not drop production tables.
+
+## Clever sign-in
+
+See [Clever setup](docs/clever-login.md) for developer/sandbox access, callback registration, server-only configuration, and the original Custom Tab versus Auth Tab behavior. The button appears only after Clever is configured.
