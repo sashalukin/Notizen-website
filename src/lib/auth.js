@@ -1,5 +1,6 @@
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
+import Discord from './auth-providers/discord';
 import pool from './db';
 import crypto from 'crypto';
 
@@ -136,6 +137,10 @@ const PostgresAdapter = {
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PostgresAdapter,
   providers: [
+    ...(process.env.AUTH_DISCORD_ID && process.env.AUTH_DISCORD_SECRET ? [Discord({
+      clientId: process.env.AUTH_DISCORD_ID,
+      clientSecret: process.env.AUTH_DISCORD_SECRET,
+    })] : []),
     Google({
       clientId: process.env.AUTH_GOOGLE_ID,
       clientSecret: process.env.AUTH_GOOGLE_SECRET,
