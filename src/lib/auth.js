@@ -1,5 +1,6 @@
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
+import Clever from './auth-providers/clever';
 import pool from './db';
 import crypto from 'crypto';
 
@@ -140,6 +141,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       clientId: process.env.AUTH_GOOGLE_ID,
       clientSecret: process.env.AUTH_GOOGLE_SECRET,
     }),
+    ...(process.env.AUTH_CLEVER_ID && process.env.AUTH_CLEVER_SECRET ? [Clever({
+      clientId: process.env.AUTH_CLEVER_ID,
+      clientSecret: process.env.AUTH_CLEVER_SECRET,
+      districtId: process.env.AUTH_CLEVER_DISTRICT_ID,
+    })] : []),
   ],
   session: {
     strategy: 'jwt',
