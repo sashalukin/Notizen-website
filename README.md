@@ -75,3 +75,7 @@ The Android auth bridge was recently hardened with PKCE (`code_challenge`/`code_
 - `src/app/android-signin/page.js`, `src/app/signin/page.js` (+ css) — client-side changes to generate/pass the PKCE pair
 
 These changes were uncommitted at the time this repo was pushed — check `git log` and `git diff` on the initial commit's parent if you need the exact before/after, or just trust the current file contents as the latest intended state.
+
+## Clever sign-in
+
+See [Clever setup](docs/clever-login.md) for developer/sandbox access, callback registration, server-only configuration, and the original Custom Tab versus Auth Tab behavior. The button appears only after Clever is configured.
