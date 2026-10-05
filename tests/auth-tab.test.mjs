@@ -101,6 +101,27 @@ test('Auth Tab return completed in original WebView establishes Auth.js session 
   assert.ok(f.paths.every(p => p.startsWith('/api/auth/')));
 });
 
+test('persistent session alone authenticates a fresh browser context without repeating Google login', async () => {
+  const f = await flow();
+  const response = await f.request(f.returned);
+  const sessionCookies = response.headers.getSetCookie().filter(c =>
+    /^__Secure-authjs\.session-token(?:\.\d+)?=/.test(c));
+  assert.ok(sessionCookies.length > 0);
+  const restored = new Map();
+  for (const cookie of sessionCookies) {
+    const expiry = /;\s*Expires=([^;]+)/i.exec(cookie);
+    assert.ok(expiry, 'session cookie must survive browser shutdown');
+    assert.ok(Date.parse(expiry[1]) > Date.now() + 29 * 24 * 60 * 60 * 1000);
+    assert.match(cookie, /;\s*HttpOnly/i);
+    assert.match(cookie, /;\s*Secure/i);
+    const pair = cookie.split(';', 1)[0], split = pair.indexOf('=');
+    restored.set(pair.slice(0, split), pair.slice(split + 1));
+  }
+  const session = await (await f.request('/api/auth/session', { cookies: restored })).json();
+  assert.equal(session.user?.email, 'test@example.invalid');
+  assert.equal(f.failures.length, 0);
+});
+
 test('browser without original WebView cookies cannot finish the same callback', async () => {
   const f = await flow();
   const response = await f.request(f.returned, { cookies: new Map(), save: false });
