@@ -12,7 +12,7 @@ function AndroidSignInInner() {
   useEffect(() => {
     let active = true;
     const provider = searchParams.get('provider') || 'google';
-    if (!['google', 'discord', 'clever'].includes(provider)) {
+    if (!['google', 'discord', 'clever', 'classlink'].includes(provider)) {
       setMessage('Unsupported sign-in provider.');
       return;
     }

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { startSignIn } from '../../lib/start-sign-in';
 import DiscordSignInButton from '../../components/DiscordSignInButton';
+import SchoolSignInButtons from '../../components/SchoolSignInButtons';
 import styles from './page.module.css';
 
 export default function SignInPage() {
@@ -34,7 +35,7 @@ export default function SignInPage() {
             Sign in with Google
           </button>
         )}
-        {!loading && <DiscordSignInButton className={styles.googleButton} />}
+        {!loading && <><DiscordSignInButton className={styles.googleButton} /><SchoolSignInButtons className={styles.googleButton} /></>}
       </div>
     </div>
   );

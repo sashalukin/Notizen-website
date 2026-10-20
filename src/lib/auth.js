@@ -1,6 +1,8 @@
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
 import Discord from './auth-providers/discord';
+import Clever from './auth-providers/clever';
+import ClassLink from './auth-providers/classlink';
 import pool from './db';
 import crypto from 'crypto';
 import { sessionCookie } from './session-cookie.mjs';
@@ -139,6 +141,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PostgresAdapter,
   cookies: { sessionToken: sessionCookie },
   providers: [
+    ...(process.env.AUTH_CLEVER_ID && process.env.AUTH_CLEVER_SECRET ? [Clever({
+      clientId: process.env.AUTH_CLEVER_ID,
+      clientSecret: process.env.AUTH_CLEVER_SECRET,
+      districtId: process.env.AUTH_CLEVER_DISTRICT_ID,
+    })] : []),
+    ...(process.env.AUTH_CLASSLINK_ID && process.env.AUTH_CLASSLINK_SECRET ? [ClassLink({
+      clientId: process.env.AUTH_CLASSLINK_ID,
+      clientSecret: process.env.AUTH_CLASSLINK_SECRET,
+    })] : []),
     ...(process.env.AUTH_DISCORD_ID && process.env.AUTH_DISCORD_SECRET ? [Discord({
       clientId: process.env.AUTH_DISCORD_ID,
       clientSecret: process.env.AUTH_DISCORD_SECRET,

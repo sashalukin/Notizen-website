@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { startSignIn } from '../lib/start-sign-in';
 import DiscordSignInButton from '../components/DiscordSignInButton';
+import SchoolSignInButtons from '../components/SchoolSignInButtons';
 import styles from './page.module.css';
 
 export default function LandingPage() {
@@ -48,6 +49,7 @@ export default function LandingPage() {
           Sign in with Google
         </button>
         <DiscordSignInButton className={styles.ctaButton} />
+        <SchoolSignInButtons className={styles.ctaButton} />
       </div>
     </div>
   );
