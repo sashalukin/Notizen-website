@@ -1,4 +1,8 @@
-# Discord login with Auth Tab
+# Discord login with standard Custom Tabs
+
+Current implementation: [Custom Tab flow](oauth-flow.md).
+Both Google and Discord use the same browser-completed session handoff in Android.
+The Auth Tab experiment is preserved only on its historical branch.
 
 Add a Discord application at https://discord.com/developers/applications and register
 exactly `https://notizen.dev/api/auth/callback/discord` under OAuth2 redirects.
@@ -18,25 +22,22 @@ Deploy the website code as well; changing only the environment does not add a pr
 
 ## Flow
 
-1. WebView starts the existing Auth.js Discord sign-in route, retaining its state cookie.
-2. Android intercepts `https://discord.com/api/oauth2/authorize` (also accepts the
-   documented `/oauth2/authorize` path on the exact same host) and opens Auth Tab.
-3. Auth Tab captures `/api/auth/callback/discord` on `notizen.dev`.
-4. Android checks the pending provider and state and loads the callback in the original WebView.
-5. Auth.js verifies the state cookie and exchanges the code server-side using HTTP Basic
-   client authentication. It fetches `/api/users/@me` and creates the normal session.
+1. The website's Discord button sends a message through the origin-restricted Android bridge.
+2. Android opens `/android-signin?provider=discord&code_challenge=...` in a standard Custom Tab.
+3. Auth.js starts and completes Discord authentication in Chrome, retaining its state cookie there.
+4. Auth.js verifies state and exchanges the provider code server-side using HTTP Basic
+   client authentication. It fetches `/api/users/@me` and creates the normal browser session.
+5. `/api/android-callback` issues a short-lived, single-use handoff code bound to Android's challenge.
+6. Android receives the `notizen://auth` callback and redeems the code plus its verifier at
+   `/api/exchange`. It waits for all session cookies to be saved before loading notes in WebView.
 
 This uses `checks: ['state']`, not PKCE, for the documented confidential-client flow.
 Only `identify` is requested, not email or any server/bot permissions. Discord uses a
 stable provider user ID. Its Notizen account is separate from an existing Google
 account; no automatic account linking or note migration is performed.
-No `/android-signin`, `/api/android-callback`, or `/api/exchange` is used by the
-Auth Tab app. This production compatibility branch preserves those routes for
-Google login in older Android versions.
-
-Use Android branch `experiment/auth-tab-no-handoff`, Chrome 137+ or another Auth Tab
-browser, and an app signing certificate listed in the site's assetlinks.json.
-The existing website association also covers this callback path.
+Use Android branch `fix/restore-custom-tabs` and a Custom Tabs-capable browser.
+This flow does not use Auth Tab or require its HTTPS callback domain verification.
+The provider OAuth state check and the app-session handoff PKCE check are separate.
 
 Automated tests simulate Discord and exercise Auth.js state validation, code exchange,
 session creation, callback replay and denial. Real Discord login still needs a device

@@ -6,7 +6,7 @@ import Discord from '../src/lib/auth-providers/discord.js';
 
 const origin = 'https://notizen.dev';
 const id = '1556796058204508232';
-async function flow() {
+async function flow(callbackUrl = origin + '/notes') {
   const jar = new Map();
   const failures = [];
   let exchanges = 0;
@@ -47,7 +47,7 @@ async function flow() {
   }
   const csrf = await (await request('/api/auth/csrf')).json();
   const start = await request('/api/auth/signin/discord', {
-    method: 'POST', body: new URLSearchParams({ csrfToken: csrf.csrfToken, callbackUrl: origin + '/notes' }),
+    method: 'POST', body: new URLSearchParams({ csrfToken: csrf.csrfToken, callbackUrl }),
   });
   const authorization = new URL(start.headers.get('location'));
   assert.equal(authorization.origin + authorization.pathname, 'https://discord.com/api/oauth2/authorize');
@@ -101,4 +101,13 @@ test('Discord cancellation does not redeem a code or create a session', async ()
   const res = await f.request(f.callback);
   assert.equal(f.exchanges(), 0);
   assert.ok(!res.headers.getSetCookie().some(c => c.startsWith('__Secure-authjs.session-token=')));
+});
+
+
+test('Discord browser login preserves the Custom Tab handoff destination', async () => {
+  const destination = origin + '/api/android-callback?code_challenge=' + 'a'.repeat(43);
+  const f = await flow(destination);
+  const response = await f.request(f.callback);
+  assert.equal(response.headers.get('location'), destination);
+  assert.ok(response.headers.getSetCookie().some(c => c.startsWith('__Secure-authjs.session-token=')));
 });

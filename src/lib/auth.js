@@ -3,6 +3,7 @@ import Google from 'next-auth/providers/google';
 import Discord from './auth-providers/discord';
 import pool from './db';
 import crypto from 'crypto';
+import { sessionCookie } from './session-cookie.mjs';
 
 function generateId() {
   return crypto.randomUUID();
@@ -136,6 +137,7 @@ const PostgresAdapter = {
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PostgresAdapter,
+  cookies: { sessionToken: sessionCookie },
   providers: [
     ...(process.env.AUTH_DISCORD_ID && process.env.AUTH_DISCORD_SECRET ? [Discord({
       clientId: process.env.AUTH_DISCORD_ID,

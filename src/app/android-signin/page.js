@@ -1,19 +1,39 @@
 'use client';
 
-import { Suspense, useEffect } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { signIn } from 'next-auth/react';
+import { getProviders, signIn } from 'next-auth/react';
 
 function AndroidSignInInner() {
   const searchParams = useSearchParams();
 
+  const [message, setMessage] = useState('Opening sign-in…');
+
   useEffect(() => {
+    let active = true;
+    const provider = searchParams.get('provider') || 'google';
+    if (!['google', 'discord', 'clever'].includes(provider)) {
+      setMessage('Unsupported sign-in provider.');
+      return;
+    }
     const codeChallenge = searchParams.get('code_challenge');
+    if (!codeChallenge || !/^[A-Za-z0-9_-]{43}$/.test(codeChallenge)) {
+      setMessage('Invalid sign-in request. Please start again in Notizen.');
+      return;
+    }
     const callbackUrl = codeChallenge
       ? `/api/android-callback?code_challenge=${encodeURIComponent(codeChallenge)}`
       : '/api/android-callback';
-    signIn('google', { callbackUrl });
-  }, []);
+    getProviders().then(providers => {
+      if (!active) return;
+      if (!providers?.[provider]) {
+        setMessage('This sign-in provider is not available yet.');
+        return;
+      }
+      return signIn(provider, { callbackUrl });
+    }).catch(() => { if (active) setMessage('Could not start sign-in. Please try again.'); });
+    return () => { active = false; };
+  }, [searchParams]);
 
   return (
     <div style={{
@@ -24,7 +44,7 @@ function AndroidSignInInner() {
       color: '#8E8E93',
       fontFamily: '-apple-system, sans-serif',
     }}>
-      Redirecting to Google...
+      {message}
     </div>
   );
 }
@@ -38,7 +58,7 @@ export default function AndroidSignIn() {
       height: '100vh',
       color: '#8E8E93',
       fontFamily: '-apple-system, sans-serif',
-    }}>Redirecting to Google...</div>}>
+    }}>Opening sign-in…</div>}>
       <AndroidSignInInner />
     </Suspense>
   );

@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getProviders, signIn } from 'next-auth/react';
+import { getProviders } from 'next-auth/react';
+import { startSignIn } from '../lib/start-sign-in';
 
 export default function DiscordSignInButton({ className }) {
   const [enabled, setEnabled] = useState(false);
@@ -20,7 +21,8 @@ export default function DiscordSignInButton({ className }) {
       setLoading(true);
       setError(false);
       try {
-        await signIn('discord', { callbackUrl: '/notes' });
+        await startSignIn('discord');
+        setLoading(false);
       } catch {
         setError(true);
         setLoading(false);

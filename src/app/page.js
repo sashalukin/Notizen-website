@@ -3,7 +3,7 @@
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-import { signIn } from 'next-auth/react';
+import { startSignIn } from '../lib/start-sign-in';
 import DiscordSignInButton from '../components/DiscordSignInButton';
 import styles from './page.module.css';
 
@@ -37,7 +37,7 @@ export default function LandingPage() {
         </p>
         <button
           className={styles.ctaButton}
-          onClick={() => signIn('google', { callbackUrl: '/notes' })}
+          onClick={() => startSignIn('google')}
         >
           <svg className={styles.googleIcon} viewBox="0 0 24 24" width="20" height="20">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>

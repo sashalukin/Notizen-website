@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { signIn } from 'next-auth/react';
+import { startSignIn } from '../../lib/start-sign-in';
 import DiscordSignInButton from '../../components/DiscordSignInButton';
 import styles from './page.module.css';
 
@@ -10,7 +10,7 @@ export default function SignInPage() {
 
   function handleSignIn() {
     setLoading(true);
-    signIn('google', { callbackUrl: '/notes' });
+    startSignIn('google').finally(() => setLoading(false));
   }
 
   return (
