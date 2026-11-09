@@ -71,6 +71,14 @@ state, server-side client_secret_post, `profile` scope and `/v2/my/info`. No ros
 class membership, or full-data scopes are requested. PKCE for the Notizen session
 handoff is separate from the provider's own OAuth flow.
 
+Notizen logout does not end ClassLink's browser SSO session. Do not add
+`prompt=login` / `max_age=0` to this OAuth2 flow: a November 9, 2026 device test
+with both parameters returned to the ClassLink login page after credentials instead
+of completing the Notizen callback. That change was rolled back. Reaching a login
+page in a signed-out test is not evidence of working reauthentication. Forced login
+or account switching needs a ClassLink-supported mechanism verified with an existing
+provider session; do not claim that Notizen logout provides provider logout.
+
 ClassLink may include an unsolicited `id_token` in its token response even with
 only `profile` requested. Our OAuth2 provider discards that unused field before
 Auth.js token processing; it does not use, decode, or persist its claims. Identity
