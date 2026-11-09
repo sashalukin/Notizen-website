@@ -62,6 +62,14 @@ state, server-side client_secret_post, `profile` scope and `/v2/my/info`. No ros
 class membership, or full-data scopes are requested. PKCE for the Notizen session
 handoff is separate from the provider's own OAuth flow.
 
+ClassLink may include an unsolicited `id_token` in its token response even with
+only `profile` requested. Our OAuth2 provider discards that unused field before
+Auth.js token processing; it does not use, decode, or persist its claims. Identity
+still requires a successful authenticated `/v2/my/info` response. State validation,
+access-token validation, provider errors and handoff checks remain enforced. This
+is not an OIDC implementation; adding OIDC later requires issuer/token validation
+and separate configuration, not reusing this OAuth2 response normalization.
+
 ClassLink account keys include TenantId and UserId. Clever uses the stable v3 user ID.
 No automatic email-based account merging is enabled; an email matching another login
 may produce an account-not-linked error. A new school account does not inherit another

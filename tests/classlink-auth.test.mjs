@@ -6,11 +6,13 @@ import ClassLink from '../src/lib/auth-providers/classlink.js';
 
 const origin = 'https://notizen.dev';
 const id = 12345;
-async function flow(callbackUrl = origin + '/notes', profile = { UserId: id, TenantId: 17, DisplayName: 'Test ClassLink User' }) {
+async function flow(callbackUrl = origin + '/notes', profile = { UserId: id, TenantId: 17, DisplayName: 'Test ClassLink User' }, tokenResponse = {}) {
   const jar = new Map();
   const failures = [];
   let exchanges = 0;
   let providerAccountId;
+  let accountIdToken;
+  let profileRequests = 0;
   const fetcher = async (input, options) => {
     const url = new URL(String(input));
     if (url.href === 'https://launchpad.classlink.com/oauth2/v2/token') {
@@ -23,10 +25,13 @@ async function flow(callbackUrl = origin + '/notes', profile = { UserId: id, Ten
       assert.equal(body.get('redirect_uri'), origin + '/api/auth/callback/classlink');
       assert.equal(body.get('code_verifier'), null);
       if (exchanges++) return Response.json({ error: 'invalid_grant' }, { status: 400 });
-      return Response.json({ access_token: 'synthetic-classlink-token', token_type: 'Bearer' });
+      return Response.json({ access_token: 'synthetic-classlink-token', token_type: 'Bearer', ...tokenResponse });
     }
     assert.equal(new Headers(options.headers).get('authorization'), 'Bearer synthetic-classlink-token');
-    if (url.href === 'https://nodeapi.classlink.com/v2/my/info') return Response.json(profile);
+    if (url.href === 'https://nodeapi.classlink.com/v2/my/info') {
+      profileRequests++;
+      return profile instanceof Response ? profile : Response.json(profile);
+    }
     throw new Error('Unexpected provider request');
   };
   const config = {
@@ -34,7 +39,7 @@ async function flow(callbackUrl = origin + '/notes', profile = { UserId: id, Ten
     providers: [ClassLink({ clientId: 'test-client', clientSecret: 'test-secret', [customFetch]: fetcher })],
     session: { strategy: 'jwt' },
     callbacks: {
-      jwt: ({ token, user, account }) => { if (user) token.id = user.id; if (account) providerAccountId = account.providerAccountId; return token; },
+      jwt: ({ token, user, account }) => { if (user) token.id = user.id; if (account) { providerAccountId = account.providerAccountId; accountIdToken = account.id_token; } return token; },
       session: ({ session, token }) => { session.user.id = token.id; return session; },
     },
     logger: { error: e => failures.push(e.type), warn() {}, debug() {} },
@@ -62,8 +67,47 @@ async function flow(callbackUrl = origin + '/notes', profile = { UserId: id, Ten
   const callback = new URL('/api/auth/callback/classlink', origin);
   callback.searchParams.set('code', 'synthetic-classlink-code');
   callback.searchParams.set('state', authorization.searchParams.get('state'));
-  return { request, callback, failures, providerAccountId: () => providerAccountId, exchanges: () => exchanges };
+  return { request, callback, failures, providerAccountId: () => providerAccountId, accountIdToken: () => accountIdToken, profileRequests: () => profileRequests, exchanges: () => exchanges };
 }
+
+// Synthetic ID token with claims deliberately different from the profile API.
+// OAuth mode must not use or persist this optional OIDC token as identity.
+function unsolicitedIdToken() {
+  const now = Math.floor(Date.now() / 1000);
+  return [
+    { alg: 'RS256', typ: 'JWT' },
+    { iss: 'https://issuer.example.invalid', aud: 'test-client', sub: 'different-user', name: 'Wrong identity', iat: now, exp: now + 300 },
+  ].map(value => Buffer.from(JSON.stringify(value)).toString('base64url')).join('.') + '.c3ludGhldGlj';
+}
+
+test('ClassLink optional ID token does not trigger OIDC or override the profile API identity', async () => {
+  const destination = origin + '/api/android-callback?code_challenge=' + 'b'.repeat(43);
+  const f = await flow(destination, undefined, { id_token: unsolicitedIdToken() });
+  const res = await f.request(f.callback);
+  assert.equal(res.headers.get('location'), destination);
+  assert.equal(f.profileRequests(), 1);
+  assert.equal(f.providerAccountId(), '17:12345');
+  assert.equal(f.accountIdToken(), undefined);
+  const session = await (await f.request('/api/auth/session')).json();
+  assert.equal(session.user.name, 'Test ClassLink User');
+  assert.deepEqual(f.failures, []);
+});
+
+test('ClassLink optional ID token cannot substitute for a valid access token', async () => {
+  const f = await flow(undefined, undefined, { access_token: '', id_token: unsolicitedIdToken() });
+  const res = await f.request(f.callback);
+  assert.ok(res.headers.get('location').includes('/api/auth/error'));
+  assert.equal(f.profileRequests(), 0);
+  assert.ok(!res.headers.getSetCookie().some(c => c.startsWith('__Secure-authjs.session-token=')));
+});
+
+test('ClassLink optional ID token cannot authenticate when the profile API denies access', async () => {
+  const f = await flow(undefined, Response.json({ error: 'unauthorized' }, { status: 401 }), { id_token: unsolicitedIdToken() });
+  const res = await f.request(f.callback);
+  assert.ok(res.headers.get('location').includes('/api/auth/error'));
+  assert.equal(f.profileRequests(), 1);
+  assert.ok(!res.headers.getSetCookie().some(c => c.startsWith('__Secure-authjs.session-token=')));
+});
 
 test('ClassLink state-based flow creates a persistent session without requiring email', async () => {
   const f = await flow();

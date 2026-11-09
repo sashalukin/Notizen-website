@@ -13,7 +13,23 @@ export default function ClassLink(options = {}) {
       url: 'https://launchpad.classlink.com/oauth2/v2/auth',
       params: { response_type: 'code', scope: 'profile' },
     },
-    token: 'https://launchpad.classlink.com/oauth2/v2/token',
+    token: {
+      url: 'https://launchpad.classlink.com/oauth2/v2/token',
+      async conform(response) {
+        if (response.status !== 200) return;
+        const body = await response.json();
+        if (!body || typeof body !== 'object' || Array.isArray(body) || body.error || !Object.hasOwn(body, 'id_token')) return;
+        // ClassLink can include an ID token even for profile-only OAuth2.
+        // Auth.js otherwise validates it as OIDC against its fallback issuer.
+        // We deliberately discard it: identity comes ONLY from the authenticated
+        // profile API below. Never decode/trust/persist these unused claims.
+        delete body.id_token;
+        const headers = new Headers(response.headers);
+        headers.delete('content-length');
+        headers.delete('content-encoding');
+        return Response.json(body, { status: response.status, headers });
+      },
+    },
     client: { token_endpoint_auth_method: 'client_secret_post' },
     userinfo: {
       url: 'https://nodeapi.classlink.com/v2/my/info',
