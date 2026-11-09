@@ -71,14 +71,6 @@ state, server-side client_secret_post, `profile` scope and `/v2/my/info`. No ros
 class membership, or full-data scopes are requested. PKCE for the Notizen session
 handoff is separate from the provider's own OAuth flow.
 
-ClassLink sign-in requests include `prompt=login` and `max_age=0` for both website
-and Android to request fresh provider authentication/account entry. Notizen logout
-does not clear ClassLink's own SSO cookies. The authorization endpoint accepts these
-parameters, but ClassLink's public OAuth parameter guide does not explicitly document
-their enforcement. Repeat-login behavior with an existing provider session still
-needs device verification; do not claim guaranteed password entry or verified
-authentication age. This remains OAuth2/profile mode, not an OIDC migration.
-
 ClassLink may include an unsolicited `id_token` in its token response even with
 only `profile` requested. Our OAuth2 provider discards that unused field before
 Auth.js token processing; it does not use, decode, or persist its claims. Identity
