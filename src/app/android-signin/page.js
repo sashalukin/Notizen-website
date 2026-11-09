@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { getProviders, signIn } from 'next-auth/react';
+import { getProviders, signIn, signOut } from 'next-auth/react';
 
 function AndroidSignInInner() {
   const searchParams = useSearchParams();
@@ -24,11 +24,24 @@ function AndroidSignInInner() {
     const callbackUrl = codeChallenge
       ? `/api/android-callback?code_challenge=${encodeURIComponent(codeChallenge)}`
       : '/api/android-callback';
-    getProviders().then(providers => {
+    getProviders().then(async providers => {
       if (!active) return;
       if (!providers?.[provider]) {
         setMessage('This sign-in provider is not available yet.');
         return;
+      }
+      // Custom Tabs share Chrome's Notizen session, not the WebView session.
+      // Native sign-in selects an account; it must not implicitly link the chosen
+      // provider to a different account left signed in by an earlier browser login.
+      // Use Auth.js's CSRF-protected POST (including chunked-cookie cleanup), and
+      // wait for it before creating the new OAuth state/callback cookies.
+      const signedOut = await signOut({ redirect: false, callbackUrl: '/signin' });
+      if (!active) return;
+      const destination = new URL(signedOut?.url || '', window.location.origin);
+      // Only inspect the result; never navigate to it. Preview hosts may receive
+      // the configured canonical origin from Auth.js.
+      if (destination.pathname !== '/signin' || destination.search) {
+        throw new Error('Could not reset browser sign-in');
       }
       return signIn(provider, { callbackUrl });
     }).catch(() => { if (active) setMessage('Could not start sign-in. Please try again.'); });

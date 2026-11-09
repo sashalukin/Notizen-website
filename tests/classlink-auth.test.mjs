@@ -2,11 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { Auth, customFetch } from '@auth/core';
+import { encode } from '@auth/core/jwt';
 import ClassLink from '../src/lib/auth-providers/classlink.js';
+import { sessionHeaders } from '../src/lib/session-cookie.mjs';
 
 const origin = 'https://notizen.dev';
 const id = 12345;
-async function flow(callbackUrl = origin + '/notes', profile = { UserId: id, TenantId: 17, DisplayName: 'Test ClassLink User' }, tokenResponse = {}) {
+async function flow(callbackUrl = origin + '/notes', profile = { UserId: id, TenantId: 17, DisplayName: 'Test ClassLink User' }, tokenResponse = {}, browserAccount = {}) {
   const jar = new Map();
   const failures = [];
   let exchanges = 0;
@@ -44,6 +46,27 @@ async function flow(callbackUrl = origin + '/notes', profile = { UserId: id, Ten
     },
     logger: { error: e => failures.push(e.type), warn() {}, debug() {} },
   };
+  if (browserAccount.existing) {
+    const oldUser = { id: 'old-browser-user', name: 'Previous browser account', email: null };
+    const classlinkUser = { id: 'existing-classlink-user', name: 'Test ClassLink User', email: null };
+    config.adapter = {
+      getUser: async userId => userId === oldUser.id ? oldUser : classlinkUser,
+      getUserByAccount: async ({ provider, providerAccountId }) => {
+        assert.equal(provider, 'classlink');
+        assert.equal(providerAccountId, '17:12345');
+        return classlinkUser;
+      },
+      getUserByEmail: async () => null,
+      linkAccount: async () => { throw new Error('Existing accounts must not be relinked'); },
+      createUser: async () => { throw new Error('Existing users must not be duplicated'); },
+    };
+    const jwt = await encode({ secret: config.secret, salt: '__Secure-authjs.session-token', token: { sub: oldUser.id, id: oldUser.id, padding: 'x'.repeat(5000) } });
+    for (const line of sessionHeaders(jwt, new Date(Date.now() + 3600_000))) {
+      const pair = line.split(';', 1)[0], split = pair.indexOf('=');
+      jar.set(pair.slice(0, split), pair.slice(split + 1));
+    }
+    assert.ok(jar.size > 1, 'exercise real chunked browser-session cleanup');
+  }
   async function request(path, { method = 'GET', body, cookies = jar } = {}) {
     const headers = { cookie: [...cookies].map(([k, v]) => `${k}=${v}`).join('; ') };
     if (body) headers['content-type'] = 'application/x-www-form-urlencoded';
@@ -56,6 +79,10 @@ async function flow(callbackUrl = origin + '/notes', profile = { UserId: id, Ten
     return res;
   }
   const csrf = await (await request('/api/auth/csrf')).json();
+  if (browserAccount.reset) {
+    await request('/api/auth/signout', { method: 'POST', body: new URLSearchParams({ csrfToken: csrf.csrfToken, callbackUrl: origin + '/signin' }) });
+    assert.ok(![...jar.keys()].some(key => key.startsWith('__Secure-authjs.session-token')));
+  }
   const start = await request('/api/auth/signin/classlink', {
     method: 'POST', body: new URLSearchParams({ csrfToken: csrf.csrfToken, callbackUrl }),
   });
@@ -69,6 +96,23 @@ async function flow(callbackUrl = origin + '/notes', profile = { UserId: id, Ten
   callback.searchParams.set('state', authorization.searchParams.get('state'));
   return { request, callback, failures, providerAccountId: () => providerAccountId, accountIdToken: () => accountIdToken, profileRequests: () => profileRequests, exchanges: () => exchanges };
 }
+
+test('existing browser account reproduces cross-account ClassLink linking refusal', async () => {
+  const f = await flow(undefined, undefined, {}, { existing: true });
+  const res = await f.request(f.callback);
+  assert.ok(res.headers.get('location').includes('error=OAuthAccountNotLinked'));
+  assert.ok(f.failures.includes('OAuthAccountNotLinked'));
+});
+
+test('native sign-out then OAuth selects the existing ClassLink account without merging or duplicating users', async () => {
+  const destination = origin + '/api/android-callback?code_challenge=' + 'c'.repeat(43);
+  const f = await flow(destination, undefined, { id_token: unsolicitedIdToken() }, { existing: true, reset: true });
+  const res = await f.request(f.callback);
+  assert.equal(res.headers.get('location'), destination);
+  const session = await (await f.request('/api/auth/session')).json();
+  assert.equal(session.user.id, 'existing-classlink-user');
+  assert.deepEqual(f.failures, []);
+});
 
 // Synthetic ID token with claims deliberately different from the profile API.
 // OAuth mode must not use or persist this optional OIDC token as identity.

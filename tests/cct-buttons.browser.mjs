@@ -6,7 +6,7 @@ const base = process.env.TEST_BASE_URL || 'http://127.0.0.1:3217';
 const names = {google: 'Sign in with Google', discord: 'Continue with Discord', clever: 'Sign in with Clever', classlink: 'Sign in with ClassLink'};
 const browser = await chromium.launch({ headless: true });
 let checks = 0;
-async function pageFor(native = false, schoolEnabled = true) {
+async function pageFor(native = false, schoolEnabled = true, signOutFails = false) {
   const context = await browser.newContext({ serviceWorkers: 'block' });
   if (native) await context.addInitScript(() => {
     window.signInMessages = [];
@@ -15,6 +15,7 @@ async function pageFor(native = false, schoolEnabled = true) {
   const page = await context.newPage();
   const posts = [];
   const errors = [];
+  const authActions = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.route('**/api/auth/**', async route => {
     const request = route.request();
@@ -27,13 +28,21 @@ async function pageFor(native = false, schoolEnabled = true) {
     ) });
     if (path.endsWith('/session')) return route.fulfill({ contentType: 'application/json', body: 'null' });
     if (path.endsWith('/csrf')) return route.fulfill({ json: { csrfToken: 'test-csrf' } });
+    if (request.method() === 'POST' && path.endsWith('/signout')) {
+      const body = new URLSearchParams(request.postData());
+      assert.equal(body.get('csrfToken'), 'test-csrf');
+      assert.equal(body.get('callbackUrl'), '/signin');
+      authActions.push('signout');
+      return route.fulfill({ json: { url: `${base}${signOutFails ? '/api/auth/error?error=Configuration' : '/signin'}` } });
+    }
     if (request.method() === 'POST' && path.includes('/signin/')) {
+      authActions.push('signin');
       posts.push({ provider: path.split('/').at(-1), body: new URLSearchParams(request.postData()) });
       return route.fulfill({ json: { url: `${base}/signin?test-complete=1` } });
     }
     return route.fulfill({ status: 400, json: {} });
   });
-  return { context, page, posts, errors };
+  return { context, page, posts, errors, authActions };
 }
 try {
   const portal = await pageFor();
@@ -60,12 +69,13 @@ try {
     }
   }
   for (const provider of Object.keys(names)) {
-    const { context, page, posts, errors } = await pageFor();
+    const { context, page, posts, errors, authActions } = await pageFor();
     await page.goto(base + '/signin');
     await page.getByRole('button', { name: names[provider] }).click();
     await page.waitForURL('**/signin?test-complete=1');
     assert.equal(posts[0].provider, provider);
     assert.equal(posts[0].body.get('callbackUrl'), '/notes');
+    assert.deepEqual(authActions, ['signin'], 'normal browser sign-in must not sign out');
     assert.deepEqual(errors, []);
     await context.close();
     checks++;
@@ -76,6 +86,7 @@ try {
     await cct.page.waitForURL('**/signin?test-complete=1');
     assert.equal(cct.posts[0].provider, provider);
     assert.equal(cct.posts[0].body.get('callbackUrl'), `/api/android-callback?code_challenge=${challenge}`);
+    assert.deepEqual(cct.authActions, ['signout', 'signin'], 'native sign-in must clear browser account before OAuth starts');
     assert.deepEqual(cct.errors, []);
     await cct.context.close();
     checks++;
@@ -86,13 +97,21 @@ try {
     ['provider=clever&code_challenge=' + 'a'.repeat(43), 'This sign-in provider is not available yet.'],
     ['provider=classlink&code_challenge=' + 'a'.repeat(43), 'This sign-in provider is not available yet.'],
   ]) {
-    const { context, page, posts } = await pageFor(false, false);
+    const { context, page, posts, authActions } = await pageFor(false, false);
     await page.goto(`${base}/android-signin?${query}`);
     await page.getByText(message, { exact: false }).waitFor();
     assert.equal(posts.length, 0);
+    assert.deepEqual(authActions, [], 'invalid/unavailable native requests must not sign out');
     await context.close();
     checks++;
   }
+  const failedReset = await pageFor(false, true, true);
+  await failedReset.page.goto(`${base}/android-signin?provider=classlink&code_challenge=${'a'.repeat(43)}`);
+  await failedReset.page.getByText('Could not start sign-in. Please try again.').waitFor();
+  assert.deepEqual(failedReset.authActions, ['signout']);
+  assert.equal(failedReset.posts.length, 0, 'failed browser reset must not start OAuth');
+  await failedReset.context.close();
+  checks++;
   for (const path of ['/', '/signin']) {
     const { context, page, posts } = await pageFor(true, false);
     await page.goto(base + path);

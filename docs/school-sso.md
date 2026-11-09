@@ -56,6 +56,15 @@ All four providers use the existing standard Custom Tab flow: native SIGN_IN bri
 `/api/android-callback` → app's `notizen://auth` callback → `/api/exchange` → saved
 WebView session cookies. Neither school integration uses Auth Tab.
 
+Custom Tabs share Chrome's cookie jar, which can hold a different Notizen account
+than the WebView. After validating the native provider/challenge, `/android-signin`
+performs a CSRF-protected Notizen sign-out POST before starting OAuth. This prevents
+Auth.js treating the app's account selection as an implicit account-link request
+and rejecting an already-linked identity with `OAuthAccountNotLinked`. It signs out
+the old Notizen account in that browser cookie jar (including other Chrome tabs),
+but does not sign out the identity provider, clear WebView data, merge accounts, or
+move notes. Normal website sign-in is unchanged; automatic email linking remains off.
+
 Clever uses authorization code + state, HTTP Basic client authentication, versioned
 `/v3.0/me` and `/v3.0/users/{id}`. ClassLink uses OneClick OAuth2 authorization code +
 state, server-side client_secret_post, `profile` scope and `/v2/my/info`. No roster,
