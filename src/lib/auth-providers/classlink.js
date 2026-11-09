@@ -11,7 +11,10 @@ export default function ClassLink(options = {}) {
     checks: ['state'],
     authorization: {
       url: 'https://launchpad.classlink.com/oauth2/v2/auth',
-      params: { response_type: 'code', scope: 'profile' },
+      // Request a fresh provider login so signing out of Notizen does not silently
+      // select the previous ClassLink account. Provider enforcement must be checked
+      // with an existing ClassLink session; this is not an auth-time security check.
+      params: { response_type: 'code', scope: 'profile', prompt: 'login', max_age: 0 },
     },
     token: {
       url: 'https://launchpad.classlink.com/oauth2/v2/token',

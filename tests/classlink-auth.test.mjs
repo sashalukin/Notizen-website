@@ -90,6 +90,8 @@ async function flow(callbackUrl = origin + '/notes', profile = { UserId: id, Ten
   assert.equal(authorization.origin + authorization.pathname, 'https://launchpad.classlink.com/oauth2/v2/auth');
   assert.equal(authorization.searchParams.get('code_challenge'), null);
   assert.equal(authorization.searchParams.get('scope'), 'profile');
+  assert.equal(authorization.searchParams.get('prompt'), 'login');
+  assert.equal(authorization.searchParams.get('max_age'), '0');
   assert.ok(authorization.searchParams.get('state'));
   const callback = new URL('/api/auth/callback/classlink', origin);
   callback.searchParams.set('code', 'synthetic-classlink-code');
