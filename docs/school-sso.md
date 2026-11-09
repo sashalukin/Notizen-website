@@ -34,6 +34,11 @@ not chat, Git, Android resources, URLs, shell arguments, or browser JavaScript.
 | `notizen-classlink-secret` | `AUTH_CLASSLINK_SECRET` |
 
 Optional Clever sandbox setting: `AUTH_CLEVER_DISTRICT_ID` (public district identifier).
+When set, this selects the default district for both browser and Android-initiated
+login. Configure the district from the app's authorized sandbox/Instant Login link;
+do not replace the Notizen sign-in URL with that Instant Login link. For a general
+multi-district production application, remove the default or implement explicit
+district selection rather than routing every user to the test district.
 Tell the maintainer only that configuration is saved, and the project/secret names.
 The website runs in `main-tokenizer-485420-h8`; its runtime identity needs access to
 these secrets and Cloud Run references must be added while preserving existing settings.
@@ -62,10 +67,21 @@ No automatic email-based account merging is enabled; an email matching another l
 may produce an account-not-linked error. A new school account does not inherit another
 account's notes.
 
-This implementation supports login initiated by the Notizen buttons. Unsolicited
-portal callbacks without the matching state are rejected. Provider account registration,
-district access, token response details and a full real-device login still need validation
-with the issued client credentials; automated tests simulate provider services.
+Login initiated by the Notizen buttons preserves the original browser or Android
+destination. Clever portal/Instant Login callbacks containing a code but no state
+discard that code and redirect to `/clever-signin`, which initiates a fresh CSRF- and
+state-protected login. A short-lived secure HttpOnly cookie prevents restart loops.
+State-bearing callbacks (including invalid/empty state) and provider errors still
+go through normal Auth.js validation; state checks are never disabled.
+
+Portal recovery deliberately finishes in browser `/notes`. It does not infer a
+pending native login or accept a destination/challenge from callback query params.
+To test the WebView handoff, start with the Clever button inside Notizen. Opening an
+Instant Login link separately does not create the native verifier needed to redeem
+a session. Provider account registration, district access, token responses and a
+full real-device login need validation with the issued credentials; automated tests
+simulate provider services. The current integrations are OAuth2; SAML/LTI require
+separate backend implementations even though the Custom Tab architecture is reusable.
 
 ## Verification
 

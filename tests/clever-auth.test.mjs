@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { Auth, customFetch } from '@auth/core';
 import Clever from '../src/lib/auth-providers/clever.js';
+import { withCleverPortalRecovery } from '../src/lib/clever-portal-recovery.mjs';
 
 const origin = 'https://notizen.dev';
 const id = '5fc43758db087d0be186c29d';
@@ -38,7 +39,9 @@ async function flow({ email = null, mismatch = false, callbackUrl = origin + '/n
   async function request(path, { method = 'GET', body, cookies = jar } = {}) {
     const headers = { cookie: [...cookies].map(([k, v]) => `${k}=${v}`).join('; ') };
     if (body) headers['content-type'] = 'application/x-www-form-urlencoded';
-    const res = await Auth(new Request(new URL(path, origin), { method, headers, body }), config);
+    const handler = request => Auth(request, config);
+    const res = await (method === 'GET' ? withCleverPortalRecovery(handler) : handler)(
+      new Request(new URL(path, origin), { method, headers, body }));
     for (const line of res.headers.getSetCookie()) {
       const pair = line.split(';', 1)[0], split = pair.indexOf('=');
       if (/max-age=0/i.test(line)) cookies.delete(pair.slice(0, split));
@@ -107,4 +110,27 @@ test('Clever browser login preserves the Custom Tab handoff destination', async 
   const callbackUrl = origin + '/api/android-callback?code_challenge=' + 'a'.repeat(43);
   const f = await flow({ callbackUrl });
   assert.equal((await f.request(f.callback)).headers.get('location'), callbackUrl);
+});
+
+test('portal recovery discards unsolicited code and only exchanges a fresh state-bound login', async () => {
+  const f = await flow();
+  const unsolicited = new URL(f.callback);
+  unsolicited.searchParams.delete('state');
+  const recovery = await f.request(unsolicited);
+  assert.equal(recovery.headers.get('location'), '/clever-signin');
+  assert.equal(f.exchanges(), 0);
+  const csrf = await (await f.request('/api/auth/csrf')).json();
+  const restart = await f.request('/api/auth/signin/clever', {
+    method: 'POST', body: new URLSearchParams({ csrfToken: csrf.csrfToken, callbackUrl: origin + '/notes' }),
+  });
+  const fresh = new URL(restart.headers.get('location'));
+  assert.equal(fresh.searchParams.get('district_id'), 'sandbox-district');
+  assert.ok(fresh.searchParams.get('state'));
+  assert.notEqual(fresh.searchParams.get('state'), f.callback.searchParams.get('state'));
+  f.callback.searchParams.set('state', fresh.searchParams.get('state'));
+  const complete = await f.request(f.callback);
+  assert.equal(complete.headers.get('location'), origin + '/notes');
+  assert.equal(f.exchanges(), 1);
+  assert.ok(complete.headers.getSetCookie().some(c => c.startsWith('__Secure-authjs.session-token=')));
+  assert.ok(complete.headers.getSetCookie().some(c => c.startsWith('__Host-notizen-clever-restart=; Max-Age=0')));
 });

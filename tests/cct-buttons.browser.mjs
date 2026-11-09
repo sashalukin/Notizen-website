@@ -36,6 +36,16 @@ async function pageFor(native = false, schoolEnabled = true) {
   return { context, page, posts, errors };
 }
 try {
+  const portal = await pageFor();
+  await portal.page.goto(`${base}/clever-signin?callbackUrl=https://attacker.example&code_challenge=untrusted`);
+  await portal.page.waitForURL('**/signin?test-complete=1');
+  assert.equal(portal.posts.length, 1);
+  assert.equal(portal.posts[0].provider, 'clever');
+  assert.equal(portal.posts[0].body.get('callbackUrl'), '/notes');
+  assert.deepEqual(portal.errors, []);
+  await portal.context.close();
+  checks++;
+
   for (const path of ['/', '/signin']) {
     for (const provider of Object.keys(names)) {
       const { context, page, posts, errors } = await pageFor(true);
